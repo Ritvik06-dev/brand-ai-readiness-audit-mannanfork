@@ -58,7 +58,7 @@
         "sitemap_urls_count": { "type": ["integer", "null"] },
         "candidates_count": { "type": "integer" },
         "selected": { "type": "array", "items": { "type": "string" }, "maxItems": 8, "description": "stratified 6-8: homepage, product/service, decision page, docs/FAQ, recent update, older/versioned, contact/about, one locale alternate" },
-        "clusters": { "type": "array", "items": { "type": "object", "additionalProperties": { "type": "integer" } }, "description": "path-pattern cluster -> count, so 100 near-identical product URLs don't consume the budget" }
+        "clusters": { "type": "array", "items": { "type": "object", "required": ["pattern", "count"], "additionalProperties": false, "properties": { "pattern": { "type": "string" }, "count": { "type": "integer" } } }, "description": "path-pattern cluster -> count, so 100 near-identical product URLs don't consume the budget" }
       }
     },
     "pages": {
