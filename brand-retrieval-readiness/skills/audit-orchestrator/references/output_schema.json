@@ -1,0 +1,125 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "output_schema.json",
+  "title": "Brand Retrieval Readiness - Final Audit Report",
+  "description": "Emitted by audit-orchestrator via build_report.py. PS floor fields plus extensions. Arithmetic invariants (counts == array lengths, opportunities never counted as findings, severity-then-id sort) are enforced by build_report.py, not by this schema.",
+  "type": "object",
+  "required": ["site", "audited_at", "audit_status", "summary", "findings"],
+  "additionalProperties": false,
+  "properties": {
+    "site": { "type": "string", "description": "The audited host, e.g. example.com" },
+    "audited_at": { "type": "string", "format": "date-time" },
+    "audit_status": { "enum": ["complete", "partial"], "description": "partial = deadline hit or capabilities unavailable; a valid partial report always beats an overrun" },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "pages_discovered": { "type": ["integer", "null"] },
+        "pages_selected": { "type": "integer" },
+        "raw_fetches_succeeded": { "type": "integer" },
+        "rendered_pages": { "type": "integer", "description": "0 when no browser is available" },
+        "browser_available": { "type": "boolean" },
+        "specialists_resolved": { "type": "integer", "description": "0 in single-skill degraded mode" },
+        "specialists_requested": { "type": "integer" },
+        "time_seconds": { "type": "integer" },
+        "capabilities_unavailable": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "required": ["total_findings", "critical", "high", "medium", "low"],
+      "additionalProperties": false,
+      "properties": {
+        "total_findings": { "type": "integer", "minimum": 0 },
+        "critical": { "type": "integer", "minimum": 0 },
+        "high": { "type": "integer", "minimum": 0 },
+        "medium": { "type": "integer", "minimum": 0 },
+        "low": { "type": "integer", "minimum": 0 },
+        "opportunities": { "type": "integer", "minimum": 0, "description": "count of opportunities[]; never counted in total_findings" }
+      }
+    },
+    "findings": { "type": "array", "items": { "$ref": "#/definitions/finding" } },
+    "opportunities": {
+      "type": "array",
+      "description": "Proactive improvements beyond detected defects. NEVER inside findings - they are not defects.",
+      "items": {
+        "type": "object",
+        "required": ["title", "rationale", "priority"],
+        "additionalProperties": false,
+        "properties": {
+          "title": { "type": "string" },
+          "rationale": { "type": "string" },
+          "priority": { "$ref": "#/definitions/severity" }
+        }
+      }
+    },
+    "needs_verification": {
+      "type": "array",
+      "description": "Low-confidence hypotheses. Never a finding (severity_model reporting gate rule 2).",
+      "items": {
+        "type": "object",
+        "required": ["title", "evidence", "what_would_confirm"],
+        "additionalProperties": false,
+        "properties": {
+          "title": { "type": "string" },
+          "evidence": { "type": "string" },
+          "what_would_confirm": { "type": "string" }
+        }
+      }
+    },
+    "not_evaluated": {
+      "type": "array",
+      "description": "Checks skipped and why - worth more than a guess; serves the false-positive line.",
+      "items": {
+        "type": "object",
+        "required": ["check_id", "reason"],
+        "additionalProperties": false,
+        "properties": {
+          "check_id": { "type": "string" },
+          "reason": { "type": "string" }
+        }
+      }
+    },
+    "limitations": { "type": "array", "items": { "type": "string" } },
+    "lint_warnings": { "type": "array", "items": { "type": "string" }, "description": "never-claim lint results; warnings only, never a validation failure" },
+    "human_summary": { "type": "string", "description": "~10 lines for a non-expert: what's broken, in what order to fix it, what it costs. Rubric: 'a non-expert could act on'." }
+  },
+  "definitions": {
+    "severity": { "enum": ["critical", "high", "medium", "low"] },
+    "confidence": { "enum": ["high", "medium", "low"] },
+    "priority": { "enum": ["critical", "high", "medium", "low"] },
+    "effort": { "enum": ["small", "medium", "large"] },
+    "category": {
+      "enum": ["access-discovery", "representation-parity", "answerability", "entity-consistency", "freshness-consistency", "referral-experience"]
+    },
+    "finding": {
+      "type": "object",
+      "required": ["id", "title", "severity", "evidence", "suggested_action"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "pattern": "^F-[0-9]{3}$", "description": "assigned only by build_report.py; specialists never assign ids" },
+        "check_id": { "type": "string", "pattern": "^[A-Z]{3}(-[A-Z0-9]+)+$" },
+        "category": { "$ref": "#/definitions/category" },
+        "title": { "type": "string", "maxLength": 200 },
+        "severity": { "$ref": "#/definitions/severity" },
+        "confidence": { "$ref": "#/definitions/confidence" },
+        "affected_urls": { "type": "array", "items": { "type": "string" } },
+        "affected_surfaces": { "type": "array", "items": { "type": "string" }, "description": "retrieval surfaces actually affected; inherits render_evidence from provider_registry.json" },
+        "evidence": { "type": "string", "minLength": 1, "description": "exact URL/path + observation + method; quotes where semantic" },
+        "why_it_matters": { "type": "string", "description": "the mechanism, stated without overclaiming" },
+        "suggested_action": {
+          "type": "object",
+          "required": ["summary", "priority"],
+          "additionalProperties": false,
+          "properties": {
+            "summary": { "type": "string" },
+            "priority": { "$ref": "#/definitions/priority" },
+            "effort": { "$ref": "#/definitions/effort" },
+            "owner": { "type": "string" },
+            "acceptance_test": { "type": "string", "description": "concrete, reproducible check proving the fix resolved the mechanism" }
+          }
+        }
+      }
+    }
+  }
+}

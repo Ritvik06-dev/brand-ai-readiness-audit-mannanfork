@@ -1,0 +1,76 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "finding_fragment.json",
+  "title": "Specialist finding fragment",
+  "description": "What each specialist skill writes after analyzing the shared snapshot (or probing in standalone URL mode). Scripts emit observations; the skill's instructions decide gates and complete candidate_finding per severity_model.md. The orchestrator's build_report.py assigns F-ids, dedups root causes, normalizes severity/confidence, and validates. Specialists never assign report ids and never fetch the site twice in composed mode.",
+  "type": "object",
+  "required": ["skill_id", "mode", "results"],
+  "additionalProperties": false,
+  "properties": {
+    "skill_id": {
+      "enum": ["access-discovery-audit", "representation-parity-audit", "answerability-audit", "entity-consistency-audit", "freshness-consistency-audit", "referral-experience-audit"]
+    },
+    "mode": { "enum": ["snapshot", "url"] },
+    "generated_at": { "type": "string", "format": "date-time" },
+    "results": { "type": "array", "items": { "$ref": "#/definitions/check_result" } },
+    "not_evaluated": {
+      "type": "array",
+      "description": "Checks this specialist could not run and why (capability, deadline, robots-blocked probe). Never a finding.",
+      "items": {
+        "type": "object",
+        "required": ["check_id", "reason"],
+        "additionalProperties": false,
+        "properties": {
+          "check_id": { "type": "string", "pattern": "^[A-Z]{3}(-[A-Z0-9]+)+$" },
+          "reason": { "type": "string" }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "severity": { "enum": ["critical", "high", "medium", "low"] },
+    "confidence": { "enum": ["high", "medium", "low"] },
+    "evidence_quality": {
+      "enum": ["direct-measurement", "direct-representation-comparison", "indirect-corroborated", "semantic-judgment", "hypothesis"],
+      "description": "Maps to severity_model.md confidence: high <- direct-*; medium <- indirect-corroborated, semantic-judgment; low <- hypothesis (goes to needs_verification, not findings)"
+    },
+    "check_result": {
+      "type": "object",
+      "required": ["check_id", "gate"],
+      "additionalProperties": false,
+      "properties": {
+        "check_id": { "type": "string", "pattern": "^[A-Z]{3}(-[A-Z0-9]+)+$" },
+        "gate": { "enum": ["finding", "pass", "not_evaluated"] },
+        "urls": { "type": "array", "items": { "type": "string" } },
+        "observations": {
+          "type": "object",
+          "description": "Raw measured values - numbers, booleans, quoted strings. No prose conclusions."
+        },
+        "evidence_quality": { "$ref": "#/definitions/evidence_quality" },
+        "candidate_finding": {
+          "description": "Required when gate == 'finding'. Completed by the model following severity_model.md.",
+          "type": "object",
+          "required": ["title", "severity", "confidence", "evidence", "suggested_action"],
+          "additionalProperties": false,
+          "properties": {
+            "title": { "type": "string", "maxLength": 200 },
+            "severity": { "$ref": "#/definitions/severity" },
+            "confidence": { "$ref": "#/definitions/confidence" },
+            "evidence": { "type": "string", "minLength": 1 },
+            "why_it_matters": { "type": "string" },
+            "affected_surfaces": { "type": "array", "items": { "type": "string" } },
+            "suggested_action": {
+              "type": "object",
+              "required": ["summary", "priority"],
+              "additionalProperties": false,
+              "properties": {
+                "summary": { "type": "string" },
+                "priority": { "enum": ["critical", "high", "medium", "low"] }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
