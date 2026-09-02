@@ -1,0 +1,1229 @@
+# Final Approach — AI Readiness Audit Skill Marketplace
+
+## 1. Core thesis
+
+We should not build another SEO auditor with a few “AI” checks bolted on.
+
+We should build a **retrieval-readiness auditor** that answers one fundamental question:
+
+> **Can modern AI systems reliably discover, retrieve, understand, trust, cite, and correctly use the information on this website — and, after sending a user there, can that user immediately accomplish the intended task?**
+
+The website should therefore be evaluated as a set of **retrieval surfaces**, not simply as HTML.
+
+Different AI products use different combinations of search indexes, crawlers, direct fetchers, readers, browsers, MCP tools, and proprietary retrieval infrastructure. Some of those mechanisms are publicly documented and some are intentionally opaque. We therefore should not build the skill around assumptions such as “Grok uses X” or “Claude uses Y.” Instead, we should identify the properties that remain important across retrieval systems and layer provider-specific knowledge on top where it is actually documented.
+
+The marketplace should consequently have a **universal technical/semantic core + provider-specific retrieval knowledge + optional empirical retrieval probes**.
+
+---
+
+# 2. The model of the problem
+
+We should model AI discoverability as a pipeline:
+
+```text
+                    ┌── Can the system reach it?
+                    │
+Website ────────────┼── Can it extract it?
+                    │
+                    ├── Can it isolate the answer?
+                    │
+                    ├── Can it identify the correct entity?
+                    │
+                    ├── Can it establish that the information is current/trustworthy?
+                    │
+                    ├── Can it retrieve the page over competing sources?
+                    │
+                    └── If a user lands there, can they complete the task?
+```
+
+This naturally divides the audit into seven major dimensions.
+
+### A. Reachability
+
+Can an AI crawler, search system, direct fetcher, or agent actually access the required URL?
+
+### B. Representation
+
+What information exists in raw HTML, rendered DOM, accessibility tree, extracted text, Markdown, structured data, feeds, PDFs, APIs, and other machine-readable representations?
+
+### C. Answerability
+
+Can important facts be extracted as coherent, self-contained passages?
+
+### D. Entity and authority
+
+Can a retrieval system determine exactly which organization/product/person the page represents, and does the rest of the web corroborate those claims?
+
+### E. Temporal correctness
+
+Can the system determine which information is current, obsolete, version-specific, or superseded?
+
+### F. Retrieval competitiveness
+
+When an AI system has several possible sources, is this site actually useful enough to be selected?
+
+### G. Referral experience
+
+When an AI sends a human to the cited page, does that page immediately satisfy the user's intent?
+
+These seven dimensions are much more robust than a checklist based around `robots.txt`, `JSON-LD`, `llms.txt`, or a particular AI vendor.
+
+---
+
+# 3. The single most important design decision: inspect multiple representations
+
+The audit should never rely on one HTML fetch.
+
+For important pages, collect:
+
+```text
+Raw HTTP
+     ↓
+Rendered DOM
+     ↓
+Visible text
+     ↓
+Reader/Article extraction
+     ↓
+Markdown extraction
+     ↓
+Accessibility tree
+     ↓
+Structured metadata
+```
+
+Then compare them.
+
+The critical question becomes:
+
+> **How much of the information a human can see survives into representations that automated retrieval systems are likely to consume?**
+
+For example:
+
+```text
+                 Raw   Rendered   Markdown   Reader
+-----------------------------------------------------
+Title              ✓       ✓          ✓         ✓
+Product description ✗      ✓          ✓         ✓
+Price               ✗      ✓          ✓         ✗
+Feature table       ✗      ✓          ✗         ✗
+FAQ                 ✗      ✓          ✓         ✓
+```
+
+This produces a much stronger finding than simply saying “the website uses React.”
+
+We should specifically detect **semantic parity**, not merely word-count parity.
+
+---
+
+# 4. Reachability audit
+
+The first specialist skill should inspect the full retrieval perimeter.
+
+It should test:
+
+```text
+HTTP status
+redirect chains
+canonical destination
+content type
+response size
+timeouts
+TLS/connection problems
+robots.txt
+meta robots
+X-Robots-Tag
+nosnippet / max-snippet / data-nosnippet
+sitemaps
+RSS/Atom feeds
+canonical URLs
+hreflang
+WAF/challenge behavior
+```
+
+And probe representative documented AI crawler/fetcher identities where appropriate.
+
+However, we should distinguish:
+
+```text
+index crawler
+user-requested fetcher
+search API
+direct URL reader
+browser agent
+```
+
+A site can be visible to an index crawler yet fail when an agent performs a direct fetch.
+
+Therefore the state model should be more granular than:
+
+```text
+AI-accessible = yes/no
+```
+
+Instead:
+
+```json
+{
+  "url": "/pricing",
+  "access": {
+    "browser": "ok",
+    "static_fetch": "ok",
+    "crawler_a": "blocked",
+    "crawler_b": "ok",
+    "direct_fetch": "ok"
+  }
+}
+```
+
+This is one of the most important generalization features.
+
+---
+
+# 5. Do not make `llms.txt` a central requirement
+
+`llms.txt` should be detected and reported, but it should not become one of the main scoring mechanisms.
+
+A missing optional machine-readable manifest does not mean a site is fundamentally invisible.
+
+Likewise, the presence of JSON-LD does not imply good retrieval.
+
+The skill should instead evaluate whether the underlying information is genuinely accessible and understandable.
+
+The same philosophy applies to:
+
+* `llms.txt`
+* JSON-LD
+* special headers
+* Markdown endpoints
+* provider-specific hints
+
+These are **signals**, not substitutes for actual content quality.
+
+---
+
+# 6. Semantic answerability
+
+This should replace simplistic “BLUF = 30–60 words” rules.
+
+We should not assume that every AI system uses the same chunk size or ranking algorithm.
+
+Instead, measure **answer isolation**.
+
+For every important page, determine whether a key fact can be recovered from a short contiguous passage containing:
+
+```text
+subject
+claim
+qualifier
+units
+timeframe
+exceptions
+```
+
+For example:
+
+```text
+Bad:
+
+"Our enterprise strategy has evolved...
+...
+Our platform supports SAML."
+
+900 words later:
+
+"Enterprise plans only."
+```
+
+versus:
+
+```text
+Good:
+
+"Enterprise plans support SAML SSO. SAML is available only on
+the Enterprise tier and requires an organization-level identity provider."
+```
+
+The second passage remains meaningful when isolated.
+
+Useful measurements include:
+
+```text
+claim completeness
+qualifier locality
+heading context
+answer distance from heading
+semantic self-containment
+table integrity
+FAQ integrity
+definition quality
+```
+
+The objective is not “write 50 words.”
+
+The objective is:
+
+> **Make important facts independently retrievable without losing their meaning.**
+
+---
+
+# 7. Structured-data and entity audit
+
+JSON-LD should be evaluated as an **entity graph**, not as a checkbox.
+
+Inspect relationships among:
+
+```text
+Organization
+Person
+Product
+SoftwareApplication
+WebSite
+WebPage
+Article
+Offer
+Service
+```
+
+Look for:
+
+```text
+@id consistency
+@graph relationships
+canonical URLs
+sameAs
+brand identity
+legal name
+social identity
+author identity
+product identity
+```
+
+Then cross-check important entities against the wider web.
+
+The real question is:
+
+> **Can different retrieval systems confidently determine what this entity is, and distinguish it from similarly named entities?**
+
+---
+
+# 8. Cross-web authority and contradiction audit
+
+This should be a first-class skill rather than a footnote.
+
+AI systems do not only know what the brand says about itself. They encounter:
+
+```text
+official site
+Wikipedia/Wikidata
+GitHub
+LinkedIn
+Crunchbase
+directories
+review platforms
+news
+industry publications
+community sites
+documentation
+third-party comparisons
+```
+
+For important factual attributes, compare the representations.
+
+Example:
+
+```text
+Official site:    Founded 2018
+Crunchbase:       Founded 2016
+LinkedIn:          Founded 2017
+Wikipedia:         Founded 2018
+```
+
+or:
+
+```text
+Official price:   $99
+Review site:       $79
+Old blog post:     $49
+```
+
+These contradictions matter because the problem is no longer “can the page be crawled?”
+
+It is:
+
+> **Which version of the fact will an AI system believe?**
+
+The skill should therefore identify:
+
+```text
+entity ambiguity
+fact disagreement
+stale third-party descriptions
+unsupported claims
+weak independent corroboration
+source-role gaps
+```
+
+---
+
+# 9. Source-role analysis
+
+A major insight from the research is that sources serve different purposes.
+
+An official site may be the best source for:
+
+```text
+features
+pricing
+documentation
+official policies
+```
+
+while:
+
+```text
+Reddit
+review platforms
+industry publications
+GitHub
+Wikipedia
+```
+
+may be better sources for:
+
+```text
+real-world experience
+reputation
+technical implementation
+history
+comparisons
+sentiment
+```
+
+Therefore the audit should not ask only:
+
+> “Does the web mention this brand?”
+
+It should ask:
+
+> **“Does the web contain strong evidence for the kinds of questions users are likely to ask about this brand?”**
+
+This leads naturally to an **AI Answer Coverage** analysis.
+
+---
+
+# 10. Generate realistic questions from the website
+
+Instead of auditing every page equally, infer the site's important entities and generate representative user questions.
+
+For a SaaS product:
+
+```text
+What does it do?
+Who is it for?
+What does it cost?
+Does it support SAML?
+What integrations are available?
+Does it have an API?
+What are its limitations?
+How does it compare with X?
+```
+
+For a local business:
+
+```text
+Where is it?
+What are the opening hours?
+Do they take reservations?
+What is the price range?
+Is parking available?
+What are popular dishes?
+```
+
+For documentation:
+
+```text
+How do I authenticate?
+What endpoint do I call?
+What parameters are required?
+What errors can occur?
+Which SDK should I use?
+```
+
+Then map:
+
+```text
+question → ideal page → actual evidence
+```
+
+This produces a much more meaningful audit than treating the homepage and a random blog article equally.
+
+---
+
+# 11. Retrieval Probe — the differentiator
+
+This should be the marketplace's most experimental and valuable skill.
+
+When possible, actually perform a small retrieval benchmark.
+
+For each generated question:
+
+```text
+search
+  ↓
+candidate sources
+  ↓
+fetch
+  ↓
+extract
+  ↓
+answer
+  ↓
+citation
+```
+
+Measure:
+
+```text
+was the brand found?
+was the right page found?
+was the correct fact extracted?
+was the answer complete?
+was the page cited?
+was another source preferred?
+was the source stale?
+was there contradiction?
+```
+
+This produces observations such as:
+
+```text
+Question:
+"Does Product X support SAML?"
+
+Result:
+
+OpenAI-like retrieval:
+  found → third-party article
+  official page not selected
+
+Perplexity-like retrieval:
+  found → official documentation
+
+Google-like retrieval:
+  found → official security page
+
+Parallel-like retrieval:
+  found → official documentation
+```
+
+Now the audit can identify an actual **retrieval weakness** rather than hypothesizing about it.
+
+---
+
+# 12. Retrieval Parity
+
+For every important fact, track where it survives:
+
+```text
+Browser
+Raw HTML
+Rendered DOM
+Reader
+Markdown
+Accessibility Tree
+Search snippet
+Direct fetch
+```
+
+The report should identify where the information is lost.
+
+Example:
+
+```text
+Pricing information:
+
+Browser              ✓
+Rendered DOM         ✓
+Raw HTML             ✗
+Markdown extraction  ✗
+Reader extraction    ✗
+```
+
+That is an extremely strong finding because it directly explains why a page that looks perfect to humans may still be poor input for retrieval systems.
+
+---
+
+# 13. Temporal and version integrity
+
+Go beyond sitemap `lastmod`.
+
+Audit:
+
+```text
+datePublished
+dateModified
+lastmod
+RSS dates
+release dates
+documentation versions
+deprecation markers
+archive pages
+redirects
+old product pages
+old pricing pages
+```
+
+Detect:
+
+```text
+stale pages
+conflicting dates
+obsolete documentation
+current page pointing to old docs
+current product mixed with deprecated terminology
+```
+
+A retrievable page containing an obsolete fact can be more dangerous than a page that cannot be retrieved.
+
+---
+
+# 14. Security and content integrity
+
+Keep the indirect prompt injection skill, but treat it as a **security/integrity risk**, not as a proven universal ranking penalty.
+
+Inspect:
+
+```text
+hidden text
+HTML comments
+off-screen elements
+zero-font elements
+hidden instructions
+untrusted user-generated content
+schema injection
+third-party embedded content
+```
+
+The objective is:
+
+> Ensure information retrieved from the website cannot easily be mistaken for instructions to an autonomous agent.
+
+The skill should identify suspicious content and explain its risk without claiming unsupported effects such as guaranteed de-indexing.
+
+---
+
+# 15. Referral experience
+
+The second half of the competition should not be reduced to Core Web Vitals.
+
+Measure both performance and **intent continuity**.
+
+For a generated question:
+
+```text
+AI query:
+"Does Product X support SAML?"
+
+Cited URL:
+https://site.com/security
+```
+
+Then ask:
+
+```text
+Is the answer immediately visible?
+Is the answer exact?
+Are important qualifications nearby?
+Is the page cluttered by unrelated content?
+Is a login/cookie wall blocking it?
+Is the next action obvious?
+Can the user continue from this page?
+```
+
+This produces a metric such as:
+
+```text
+AI Referral Continuity
+```
+
+A technically fast page that makes users search through five screens of marketing content is still a poor landing page for AI-generated traffic.
+
+---
+
+# 16. Browser-based agent experience
+
+For sites where it is practical, add a deeper optional audit that gives an agent actual tasks:
+
+```text
+Find the pricing.
+Find the SAML requirement.
+Find the API authentication method.
+Find the refund policy.
+Find enterprise contact information.
+```
+
+Record:
+
+```text
+time
+clicks
+scrolls
+searches
+failed actions
+retries
+pages visited
+dead ends
+answer correctness
+```
+
+This transforms the skill from:
+
+> “Is your website technically good?”
+
+into:
+
+> **“Can an agent actually use your website?”**
+
+This is especially valuable for documentation, SaaS dashboards that expose public pages, ecommerce, knowledge bases, and complex product sites.
+
+---
+
+# 17. Provider architecture
+
+We should maintain a small provider registry, but never make the marketplace depend on brittle assumptions.
+
+Each provider record should contain:
+
+```json
+{
+  "provider": "example",
+  "product": "example-product",
+  "capabilities": [
+    "search",
+    "direct-fetch"
+  ],
+  "documented_agents": [],
+  "documented_directives": [],
+  "backend": {
+    "type": "first-party",
+    "confidence": "documented"
+  }
+}
+```
+
+Possible classifications:
+
+```text
+first-party
+third-party
+configurable
+hybrid
+unknown
+```
+
+This allows us to say:
+
+```text
+Cursor → Exa
+```
+
+when documented,
+
+while representing:
+
+```text
+ChatGPT → proprietary/undisclosed search stack
+```
+
+without inventing an external provider.
+
+Similarly, a configurable system such as OpenCode should not be represented as though it has one immutable backend.
+
+---
+
+# 18. Marketplace decomposition
+
+The marketplace should contain one orchestrator and several genuine specialist skills.
+
+Recommended structure:
+
+```text
+brand-ai-readiness/
+│
+├── marketplace.json
+├── README.md
+│
+└── skills/
+    ├── audit-orchestrator/
+    │   ├── SKILL.md
+    │   ├── scripts/
+    │   └── references/
+    │
+    ├── retrieval-surface/
+    │   ├── SKILL.md
+    │   ├── scripts/
+    │   └── references/
+    │
+    ├── render-extraction/
+    │   ├── SKILL.md
+    │   ├── scripts/
+    │   └── references/
+    │
+    ├── semantic-answerability/
+    │   ├── SKILL.md
+    │   ├── scripts/
+    │   └── references/
+    │
+    ├── entity-authority/
+    │   ├── SKILL.md
+    │   └── references/
+    │
+    ├── temporal-integrity/
+    │   ├── SKILL.md
+    │   └── scripts/
+    │
+    ├── security-integrity/
+    │   ├── SKILL.md
+    │   └── scripts/
+    │
+    ├── referral-experience/
+    │   ├── SKILL.md
+    │   ├── scripts/
+    │   └── references/
+    │
+    └── retrieval-probe/
+        ├── SKILL.md
+        ├── scripts/
+        └── references/
+```
+
+This is enough decomposition to demonstrate genuine separation of concerns without splitting trivial checks into dozens of artificial skills.
+
+---
+
+# 19. Shared snapshot architecture
+
+Do not make every skill crawl the website again.
+
+The orchestrator should first create a shared evidence snapshot:
+
+```text
+site_snapshot/
+    pages
+    raw_html
+    rendered_html
+    extracted_text
+    markdown
+    accessibility
+    headers
+    robots
+    sitemaps
+    metadata
+    schema
+    links
+    performance
+```
+
+Then specialist skills consume that snapshot.
+
+```text
+                    ┌── retrieval
+                    ├── extraction
+                    ├── semantics
+site snapshot ──────┼── entities
+                    ├── freshness
+                    ├── security
+                    └── UX
+```
+
+This is faster, more deterministic, and removes repeated crawling.
+
+---
+
+# 20. Separate deterministic facts from model judgment
+
+Scripts should determine things such as:
+
+```text
+403/200
+redirect count
+header values
+robots rules
+H1 count
+heading tree
+schema presence
+canonical
+URL depth
+orphan pages
+raw/rendered text
+table structure
+timestamps
+hidden CSS
+```
+
+The model should judge things such as:
+
+```text
+Is this passage self-contained?
+Is the answer clear?
+Is terminology ambiguous?
+Is this page actually suitable as evidence?
+Are the qualifiers sufficiently close?
+Does the page answer the likely user intent?
+```
+
+The model should never be asked to count what Python can count.
+
+---
+
+# 21. Adaptive execution
+
+The audit should not always execute every expensive check.
+
+Use a staged model:
+
+### Stage 1 — cheap universal scan
+
+```text
+HTTP
+robots
+metadata
+sitemap
+HTML
+links
+schema
+basic extraction
+```
+
+### Stage 2 — targeted semantic checks
+
+Only inspect deeper pages/representations where Stage 1 finds something worth investigating.
+
+### Stage 3 — expensive empirical testing
+
+Only when useful:
+
+```text
+retrieval probe
+cross-web corroboration
+browser agent tasks
+```
+
+This keeps the normal audit within the hackathon's runtime constraint while allowing deeper investigation when the site actually warrants it. The challenge explicitly sets a typical audit runtime target below five minutes.
+
+---
+
+# 22. Evidence-first findings
+
+Every finding should contain:
+
+```text
+what happened
+where it happened
+how we measured it
+why it matters
+what should change
+```
+
+Internally, use a richer finding object:
+
+```json
+{
+  "id": "RET-017",
+  "title": "Pricing content is unavailable to static retrieval",
+  "severity": "high",
+  "confidence": "high",
+  "scope": {
+    "url": "/pricing",
+    "surface": "raw-html"
+  },
+  "evidence": {
+    "raw_words": 312,
+    "rendered_words": 1840,
+    "important_fact_retention": 0.19
+  },
+  "mechanism": "Core pricing information appears only after client-side hydration.",
+  "suggested_action": {
+    "summary": "Server-render pricing information...",
+    "priority": "high"
+  }
+}
+```
+
+The orchestrator then converts this to the contest-required output schema.
+
+The challenge requires `site`, `audited_at`, severity counts, and findings with `id`, `title`, `severity`, `evidence`, and `suggested_action`.
+
+---
+
+# 23. Severity model
+
+Severity should represent **impact × confidence**, not arbitrary HTML thresholds.
+
+### Critical
+
+A major retrieval surface is effectively inaccessible.
+
+### High
+
+Important facts cannot reliably be retrieved, interpreted, or correctly attributed.
+
+### Medium
+
+Retrieval works but quality, freshness, semantics, or user continuity are materially degraded.
+
+### Low
+
+Optimization opportunity rather than a meaningful failure.
+
+Every finding should also have:
+
+```text
+confidence:
+    high
+    medium
+    low
+```
+
+This is especially important for semantic and external-web conclusions.
+
+---
+
+# 24. Universal score vs provider scores
+
+Do not produce a fake universal:
+
+```text
+AI Readiness = 82/100
+```
+
+Instead produce dimensions:
+
+```text
+Reachability          94
+Representation        71
+Answerability         83
+Entity integrity      77
+Temporal integrity    68
+Referral experience   81
+```
+
+and optionally:
+
+```text
+Retrieval surface matrix
+```
+
+such as:
+
+```text
+                 OpenAI   Google   Anthropic   Perplexity
+Reachability       ✓        ✓         ✓           ✓
+Static extraction  82       82        82          82
+Entity clarity     74       79        76          74
+Answerability      88       88        88          88
+```
+
+The common dimensions are universal.
+
+Provider-specific behavior is layered on top.
+
+---
+
+# 25. The fundamental unit should be URL × surface
+
+Do not think:
+
+```text
+website = good/bad
+```
+
+Think:
+
+```text
+(URL, retrieval surface) → state
+```
+
+For example:
+
+```text
+/pricing × browser       = excellent
+/pricing × static fetch  = poor
+/pricing × search index  = discoverable
+/pricing × direct fetch  = excellent
+```
+
+This lets the final report explain the actual failure mechanism.
+
+---
+
+# 26. What we should NOT hard-code
+
+Avoid universal claims such as:
+
+```text
+30–60 word BLUF is mandatory
+256–512 token chunks are universal
+JSON-LD @graph guarantees entity resolution
+missing llms.txt is a real defect
+CLS above a threshold causes a fixed percentage bounce
+one AI product always uses one external search provider
+403 for one crawler means every AI system is blocked
+```
+
+These can be heuristics or evidence, but they should not become universal laws.
+
+The skill should prefer:
+
+> **measured behavior > assumed architecture.**
+
+---
+
+# 27. Final execution flow
+
+The entire marketplace should work approximately like this:
+
+```text
+INPUT
+  ↓
+URL normalization
+  ↓
+site discovery
+  ↓
+shared site snapshot
+  ↓
+┌─────────────────────────────────────┐
+│ Universal deterministic audits       │
+│                                     │
+│ Reachability                         │
+│ Render / extraction                  │
+│ Semantic answerability               │
+│ Entity / authority                   │
+│ Temporal integrity                   │
+│ Security / integrity                 │
+│ Referral experience                  │
+└─────────────────────────────────────┘
+  ↓
+Identify high-value questions
+  ↓
+Optional empirical retrieval probe
+  ↓
+Optional deep agent-experience probe
+  ↓
+cross-skill evidence aggregation
+  ↓
+deduplicate / correlate findings
+  ↓
+severity + confidence normalization
+  ↓
+prioritize by expected impact
+  ↓
+generate actionable recommendations
+  ↓
+validate output schema
+  ↓
+FINAL REPORT
+```
+
+---
+
+# 28. The key differentiator
+
+The marketplace should ultimately be able to say:
+
+> “Your page is visible to a human, but 61% of the information needed to answer likely user questions disappears during static extraction.”
+
+or:
+
+> “Your official page is technically accessible, but three independent sources disagree with your current pricing, while retrieval probes consistently select the older third-party price.”
+
+or:
+
+> “Your product is well represented on the official site, but external sources do not provide enough evidence for comparison/reputation questions.”
+
+or:
+
+> “AI systems can retrieve the answer, but the cited landing page hides the answer beneath promotional content, creating poor referral continuity.”
+
+Those are **mechanistic diagnoses**.
+
+A conventional SEO audit might say:
+
+> “Add schema.”
+
+A weak GEO audit might say:
+
+> “Create an llms.txt.”
+
+Our audit should instead say:
+
+> **“Here is exactly where information is lost, why that can affect retrieval, which retrieval surfaces are affected, and what change removes the failure.”**
+
+That is the product.
+
+---
+
+# 29. Final implementation priority
+
+Build in this order:
+
+**P0**
+
+1. Shared crawl/site snapshot
+2. HTTP/WAF/robots/meta/sitemap audit
+3. Raw vs rendered vs extracted parity
+4. Semantic answerability
+5. Entity identity
+6. Cross-page canonical/discovery structure
+
+**P1**
+
+7. Freshness/version/deprecation
+8. Tables/FAQ/definitions/claim-locality
+9. Off-site corroboration and contradiction detection
+10. Referral continuity
+11. Security/injection integrity
+
+**P2**
+
+12. Automatic question generation
+13. Multi-surface retrieval probes
+14. Agent task-completion testing
+
+P0 gives us a strong contest submission. P1 makes it substantially better. P2 is the differentiator that can make the project stand out.
+
+---
+
+# 30. Final positioning
+
+The project should be presented as:
+
+> **An evidence-driven AI retrieval readiness auditor, not an AI SEO checklist.**
+
+Its purpose is to model the path:
+
+```text
+discover
+→ fetch
+→ extract
+→ understand
+→ identify
+→ corroborate
+→ retrieve
+→ cite
+→ land
+→ complete task
+```
+
+across the increasingly heterogeneous ecosystem of AI search engines, conversational systems, developer agents, IDE assistants, and web-retrieval tools.
+
+The core remains provider-neutral.
+
+Provider-specific behavior is represented as documented capabilities and access semantics.
+
+Actual retrieval behavior is tested where possible.
+
+All findings are evidence-backed, confidence-aware, and mechanism-specific.
+
+And the final recommendations are prioritized according to what will most improve the probability that a machine can **find the right information, use it correctly, and send a human to a page that actually delivers on the promise of the answer.**

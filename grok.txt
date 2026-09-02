@@ -1,0 +1,479 @@
+The drafts are useful, but they converge on a GEO checklist. The contest is grading something else: encoded diagnostic reasoning that generalizes, with evidence, few false positives, and mechanism-sound fixes. Judges evaluate the marketplace (instructions, checks, composition), not a pretty report from one site.
+
+================================================================================
+WHAT THIS ROUND ACTUALLY IS
+================================================================================
+
+Round 2 was *why* a brand is invisible / stale / bouncing in AI apps. Round 3 is: turn that into reusable skills so a generic agent, given any URL, can audit and report.
+
+The named failure modes (sample skill description + appendix) are the coverage floor:
+
+  Pipeline step          Failure mode they named                          Appendix
+  ---------------------- ------------------------------------------------ --------
+  Let the crawler in     crawlability                                     A
+  Read the page          JS-render gaps; facts locked in non-text         C, F
+  Pick out the fact      content that isn't extractable/quotable          A, B
+  Know who it is         missing/invalid structured data; entity          D
+                         ambiguity
+  Trust the fact         stale or uncorroborated facts                    D
+  Keep the human         weak on-site orientation / no context retention  E
+
+If a skill does not map onto one of those, it is padding. If a named mode has no real check, that is a miss.
+
+They will grade unseen sites. Field research is for discovering signals, not for memorizing domains.
+
+================================================================================
+WHERE THE OTHER DRAFTS GO WRONG
+================================================================================
+
+I read all five. They agree on hub-and-spoke + robots/JSON-LD/headings. The disagreements matter more.
+
+Gemini (and the research report) overfit to a fake-precise GEO playbook: BLUF must be 30-60 words, RAG chunks are 256-512 tokens, CLS > 0.1, IPI "causes de-indexing," IndexNow because "ChatGPT uses Bing," llms.txt as a real defect. Those numbers are not laws. Several are marketing claims. Hard-coding them produces false positives on good SSR sites — and the rubric punishes FPs.
+
+ChatGPT has the best *model*: retrieval surfaces, answer isolation, training vs retrieval bots, referral continuity, shared snapshot, confidence. It then overbuilds a product (live multi-engine probes, browser-agent task loops, provider registry). That will blow the 5-minute budget, needs APIs the sandbox may not have, and is not what they grade.
+
+GLM is right that judges *read* SKILL.md, and that IPI-as-security is out of scope. It is wrong that you should ship no scripts. The PS itself says: lean SKILL.md, checklists in references/, executable checks in scripts/. Adobe's own skills use scripts. An LLM counting words and parsing JSON-LD by hand is how you get nondeterministic junk.
+
+GLM Flash is the best critic: anti-FP gates, don't depend on Playwright, don't ping IndexNow, engagement is not Core Web Vitals, email/non-text is in the appendix. Its architecture still inherits Gemini's checklist smell.
+
+Independent take: build ChatGPT's pipeline model, GLM Flash's FP discipline, and the PS's named failure modes — with scripts that measure and markdown that interprets. Do not build a crawler product.
+
+================================================================================
+THE MODEL TO ENCODE
+================================================================================
+
+An assistant citing a brand is a pipeline. Any break is a finding. The report should name which step broke, with evidence.
+
+  reach  →  read  →  extract  →  identify  →  trust  →  cite
+                                                            ↓
+                                                    human lands
+                                                            ↓
+                                       orient + keep context + next action
+
+That is stronger than "add schema / add llms.txt." A conventional SEO audit says the latter. A winning skill says:
+
+  Pricing is in the hydrated DOM (1,840 words) and missing from the raw HTML
+  (312 words). Static fetchers and most AI crawlers never execute JS, so the
+  official price is unquotable. Suggested action: SSR or prerender /pricing
+  so the numbers exist in the first HTML response.
+
+================================================================================
+MARKETPLACE SHAPE (7 SKILLS, NOT 9)
+================================================================================
+
+One entrypoint + six specialists. Each specialist has a different evidence source and a different fix family. That is how you beat the "padding" line.
+
+  brand-ai-readiness-audit/
+  ├── marketplace.json
+  ├── README.md
+  └── skills/
+      ├── audit-orchestrator/           # snapshot, dispatch, merge, schema
+      ├── crawl-access-audit/           # robots, WAF, sitemap, headers
+      ├── machine-readability-audit/    # JS-render gaps + non-text lock-in
+      ├── fact-extractability-audit/    # can a passage stand alone as an answer
+      ├── entity-identity-audit/        # JSON-LD validity, identity, ambiguity
+      ├── freshness-corroboration-audit/
+      └── referral-engagement-audit/    # orientation, intent continuity, friction
+
+Do NOT add a security/IPI skill. Hidden text belongs in machine-readability (can the machine tell signal from junk). "Ignore previous instructions in an HTML comment causes de-indexing" is not in the PS and is weakly evidenced.
+
+Do NOT add a live "query ChatGPT/Perplexity" skill. Not self-contained, not deterministic, not needed for grading.
+
+Merge JS-render and non-text into ONE skill (appendix C is one idea: the page a human sees is not the page a machine gets). Splitting them is padding.
+
+--------------------------------------------------------------------------------
+What each skill actually does
+--------------------------------------------------------------------------------
+
+1. audit-orchestrator (entrypoint)
+
+Does not re-audit. It:
+
+  1. Normalizes the URL, respects robots.txt, samples pages.
+  2. Builds a shared snapshot once (headers, robots, sitemap, raw HTML,
+     extracted text, JSON-LD, dates, links).
+  3. Tells the agent to run each specialist on the snapshot, not by recrawling.
+  4. Dedupes, normalizes severity, attaches playbook actions, validates JSON,
+     emits the required report.
+
+Page budget (hard, for the 5-minute cap): homepage + about/product/pricing/docs/blog
+if they exist, else sitemap-sampled templates, cap ~6 HTML pages. Timeouts 8-10s.
+Global deadline ~4 minutes → partial report with a coverage note, never hang.
+
+2. crawl-access-audit — can they get in?
+
+This is where other drafts will bleed FPs.
+
+You must distinguish training vs retrieval vs user-fetch:
+
+  Bot                         Role                      Block =
+  --------------------------  ------------------------  ------------------------------------------
+  OAI-SearchBot               ChatGPT search index      Critical for ChatGPT citations
+                                                        (OpenAI says opted-out sites are not shown
+                                                        in search answers)
+  ChatGPT-User                user-triggered fetch      High for "open this URL"; OpenAI says
+                                                        robots.txt may not apply
+  GPTBot                      training                  NOT critical. Policy choice. Medium/low,
+                                                        framed as "future model familiarity,"
+                                                        never as "you are invisible today"
+  Claude-SearchBot /          Claude search / live      High/critical if blocked
+  Claude-User                 fetch
+  ClaudeBot                   training                  Same as GPTBot — not a visibility outage
+  PerplexityBot /             index / live              High if blocked
+  Perplexity-User
+  Googlebot                   search + AI Overviews     Critical if blocked; Google-Extended is a
+                                                        training opt-out token, not a crawler
+
+Severity gate: critical only on a differential — browser UA gets 200, retrieval bot
+gets 403 / cf-mitigated: challenge. A 403 to everyone is "site down," a different
+finding. A Disallow: / for GPTBot only is NOT an outage.
+
+Also check: User-agent: * + Disallow: / (accidental blanket), X-Robots-Tag /
+noindex / nosnippet, redirect chains, sitemap listed and parseable. Missing
+llms.txt is NOT a defect (SERanking 300k-domain study: no citation lift). Probe
+it and, if absent, emit a low proactive suggestion, especially for docs sites.
+
+Spoofing bot UAs from your laptop is evidence of WAF policy, not proof the real
+crawler is blocked (Cloudflare may treat your IP differently). Say that in the
+skill. Confidence = medium unless robots.txt itself disallows the token.
+
+3. machine-readability-audit — can they read it?
+
+Two families, one skill:
+
+  - JS-render gap. Compare raw HTML text vs SPA-shell signals (#root/#app empty,
+    noscript "enable JS", almost no <h1>/<p>). If a headless browser exists, use
+    it to raise confidence, never as a requirement. Thresholds need two signals
+    (empty shell AND very low raw word count). Next.js/Nuxt SSR with a #__next
+    div full of text must NOT flag.
+
+  - Facts locked in non-text. Hero images with the value prop and empty alt;
+    canvas/SVG-only pricing; CSS-grid "tables" with no <table>/<th>; video with
+    no transcript nearby. This also covers appendix F (email summarizers)
+    without a dedicated email skill: same mechanism, image-only substance.
+
+4. fact-extractability-audit — can they quote a fact?
+
+Do NOT enforce "first paragraph is 30-60 words." Measure answer isolation:
+
+For each important page, identify 3-5 likely questions from headings/title
+(What does it cost?, Does it do X?). For each, can a short contiguous passage
+recover subject + claim + qualifier + units/time?
+
+Flag when: no H1; heading skips that actually scramble outline; the first
+factual number/entity under a money heading is hundreds of words down;
+comparison data is in an unlabelled div grid; FAQ exists as accordion JS with
+no text in HTML.
+
+This is the "easy to quote" test from appendix B. It is content-ops, not a CSS lint.
+
+5. entity-identity-audit — do they know who this is?
+
+JSON-LD as an identity graph, not a checkbox:
+
+  - Parse every application/ld+json (invalid JSON is a real high finding).
+  - Organization/WebSite/Product/Article as appropriate to the template.
+  - name / url / logo presence.
+  - sameAs as disambiguation, not as "must have Wikidata."
+  - Cross-check org name vs <title> vs OG vs H1 — inconsistency is entity
+    ambiguity.
+  - Isolated blobs vs @id/@graph links: suggest connecting them; don't call
+    disconnected-but-valid schema a critical failure.
+
+No Organization schema on a brochure site = high. No sameAs = medium. Missing
+llms.txt ≠ missing entity.
+
+Off-site corroboration: optional HEAD/GET of sameAs URLs if the network allows;
+timeouts never become findings. Do not require Wikipedia/Crunchbase APIs.
+
+6. freshness-corroboration-audit — which version will they believe?
+
+  - Sitemap lastmod identical on ≥80% of URLs → medium (build stamp, not
+    content time).
+  - lastmod vs dateModified / visible "updated" disagree by a lot → medium.
+  - Pricing/docs/about with no date signals → low.
+  - Year-in-title vs body year mismatch, "IE11," obviously superseded product
+    names → medium, with quotes as evidence.
+
+True multi-source contradiction (site says 2018, Crunchbase says 2016) is gold
+but optional and low-confidence. On-page contradiction is enough and portable.
+
+7. referral-engagement-audit — the half most teams will botch
+
+Do NOT fake LCP/CLS/INP from static HTML. You cannot measure CWV without a
+browser, and guessed CLS will FP.
+
+The PS named orientation and context retention. Appendix E is
+personalization/prior context. The mechanism for AI traffic:
+
+The user already got an answer in the assistant. They click through. The page
+must confirm they're in the right place, show the cited fact fast, and offer a
+next step — without wiping context.
+
+Checks that actually generalize:
+
+  - Viewport meta missing (real, high on mobile).
+  - Cookie/paywall/login overlay that hides main content in the initial HTML.
+  - No breadcrumbs / weak IA (no way to see where you are).
+  - Primary heading doesn't match the page's likely cited claim (H1 is a
+    slogan; the fact is in a footer).
+  - Inconsistent product/brand naming across sampled pages (breaks
+    conversation context).
+  - "Click here" nav, no in-content next step on money pages.
+  - Autoplay media, interstitial before content.
+
+Personalization: do NOT invent "no localStorage = bounce." Suggest, as
+proactive/low, that landing pages honor the referred question (anchor IDs, FAQ
+that matches common queries, stable entity wording). That is appendix E
+without cosplay.
+
+================================================================================
+SCRIPTS VS MARKDOWN (DO BOTH)
+================================================================================
+
+  Lives in        Job
+  --------------  --------------------------------------------------------------
+  SKILL.md        Why the check exists, when to run it, how to interpret,
+                  when not to flag, severity rules, evidence sentence templates
+  scripts/        HTTP, robots parse, HTML extract, JSON-LD parse, date compare,
+                  word counts — stdlib only (urllib, html.parser, json, re)
+  references/     Bot registry (training vs retrieval), severity gates,
+                  remediation playbook, output schema, FP whitelist
+                  (sr-only, skip links)
+
+The model must never count what Python can count. The model MUST judge "is this
+passage self-contained?" and "is this the same entity?"
+
+Scripts output a richer internal finding; the orchestrator projects the contest
+schema (id, title, severity, evidence, suggested_action). Extra fields are
+allowed (confidence, mechanism, page, check_id). Use them.
+
+Remediation playbook (references/remediation_playbook.json) keyed by check id:
+summary, mechanism rationale, example snippet, effort. The agent selects and
+fills evidence; it does not invent mechanisms. That is how you hit
+"mechanism-sound" without LLM drift.
+
+================================================================================
+SEVERITY, FPs, AND WHAT NOT TO HARD-CODE
+================================================================================
+
+Severity = impact on citation or bounce × confidence.
+
+  Critical   retrieval surface actually inaccessible (retrieval bot blocked,
+             whole-site noindex, site down).
+  High       important facts unreadable or unattributable (CSR-only pricing,
+             invalid JSON-LD, image-only value prop).
+  Medium     works but degraded (uniform lastmod, weak sameAs, buried answer,
+             overlay).
+  Low        proactive, not a defect (llms.txt, markdown Accept, IndexNow
+             advice).
+
+Rules that will save the FP rubric:
+
+  1. Two independent signals for high/critical, or one very strong signal
+     (robots Disallow: / for OAI-SearchBot).
+  2. confidence: high|medium|low on every finding.
+  3. Whitelist accessibility hiding; don't call sr-only cloaking.
+  4. Training-bot blocks are not outages.
+  5. Missing llms.txt is never above low.
+  6. Known-good sites (MDN, Stripe docs, Wikipedia) should produce near-zero
+     high/critical. If they don't, your gates are wrong.
+
+Do not ship as laws: 30-60 word BLUF, 256-512 token chunks, "JSON-LD @graph
+guarantees entity resolution," "CLS 0.1 = 24% bounce," "ChatGPT always uses
+Bing," "one 403 means all AI is blocked."
+
+================================================================================
+PROACTIVE LAYER (THEY EXPLICITLY REWARD THIS)
+================================================================================
+
+Always emit 2-4 beyond-defect suggestions, marked low/informational, only if
+relevant:
+
+  - Answer-first, self-contained sentences on pricing/docs/FAQ (quotability).
+  - Connect Organization → Product/Offer with @id; add sameAs you actually
+    have (LinkedIn, GitHub, Wikidata if it exists — don't invent QIDs).
+  - If they blanket-block or blanket-allow all AI bots: recommend the training
+    vs retrieval split as policy, with the official tokens.
+  - Docs-heavy sites: llms.txt + rel=alternate markdown as agent-harness DX,
+    not as a ranking factor.
+  - IndexNow / faster recrawl: written advice only. Never POST to IndexNow.
+  - If HTML is boilerplate-heavy: content negotiation (Accept: text/markdown)
+    as an optional edge pattern.
+
+================================================================================
+RUNTIME AND SAFETY (NON-NEGOTIABLE)
+================================================================================
+
+  - Recommend-only; no writes, no auth, no IndexNow ping, no rate-abuse.
+  - Honor robots.txt for paths you crawl; still read robots.txt and sitemap
+    (those are always fetchable).
+  - Stdlib Python + curl. No Playwright in the zip. No model weights.
+    Zip ≪ 50MB.
+  - skills-ref validate every folder. name matches directory, kebab-case,
+    description ≤ 1024 chars and includes "use when…".
+  - Follow THEIR marketplace.json (one entrypoint: true), not Adobe's plugin
+    marketplace format.
+
+================================================================================
+BUILD ORDER
+================================================================================
+
+  1. Field research (1 day) — signals ledger, not code. Protocol below.
+  2. Skeleton — manifest, orchestrator, schema, snapshot script, fixture harness.
+  3. Specialists — crawl-access and machine-readability first (most FPs live
+     here), then entity, extractability, freshness, engagement.
+  4. Playbook + aggregator + FP suite on saved HTML fixtures.
+  5. Live corpus calibration — especially known-good sites.
+  6. README that justifies decomposition (evidence source × fix family table).
+     Zip.
+
+P0 is a complete, honest auditor of the named modes. P1 is better extractability
+language and on-page corroboration. P2 (live engine probes, browser tasks) is a
+demo extra, not the submission.
+
+================================================================================
+HOW TO FIND TEST SITES (THIS IS PART OF THE CONTEST)
+================================================================================
+
+They will not grade the sites you studied. You still need them to discover
+signals and to kill false positives. Two corpora, not one.
+
+--------------------------------------------------------------------------------
+Corpus A — cited vs uncited pairs (signal discovery)
+--------------------------------------------------------------------------------
+
+Goal: same vertical, one domain assistants actually cite, one they skip or
+misrepresent. Diff the pipeline, don't admire the brand.
+
+Query bank (30-40 questions, mix of verticals). Write questions a real user
+would ask, not "best website":
+
+  - SaaS: "does {product} support SAML," "{product} vs {competitor} pricing"
+  - Local: "best {cuisine} in {city} with hours," "does {clinic} take walk-ins"
+  - Docs: "how to rotate {vendor} API keys"
+  - Commerce: "{brand} return policy," "is {sku} in stock"
+  - Ambiguous names: "apple" (fruit vs company), "mercury" (bank vs planet vs
+    element), Indian brand names that collide
+  - Stale: "{product} pricing 2026," "is {deprecated API} still supported"
+
+Where to run them (citation-showing surfaces):
+
+  1. Perplexity — always shows sources; fastest pairing.
+  2. ChatGPT with search — note who is cited vs who is only a nav link.
+  3. Google AI Overviews / AI Mode — different stack (Googlebot, not GPTBot).
+  4. Optional: Copilot, Claude with web search.
+
+For each query, record: cited domain, cited URL, a same-vertical domain that
+did not appear, and a one-line "why I expected them to."
+
+Then, for BOTH domains, run the same cheap probes (this is your signals ledger,
+a CSV):
+
+  query | cited_domain | uncited_domain | signal | cited_value | uncited_value
+
+Signals to log (raw, no drama):
+
+  - robots.txt allow/deny per retrieval vs training token
+  - homepage raw word count, H1 text, JSON-LD types
+  - empty #root / #app vs not
+  - llms.txt 200 or not (expect this not to separate pairs)
+  - sitemap exists; lastmod uniform or not
+  - org name in title vs schema
+  - first 80 words contain a fact (number, date, named entity) or not
+  - overlay/paywall in raw HTML
+  - image-only hero with empty alt
+
+Distill: a signal becomes a check only if it repeatedly splits cited vs uncited,
+or repeatedly explains a misrepresentation. If llms.txt doesn't split (it
+probably won't), it stays proactive. If raw-vs-shell does, it's P0.
+
+Do 12-15 pairs, not 50. Stop when new pairs stop teaching new mechanisms.
+
+--------------------------------------------------------------------------------
+Corpus B — archetypes (generalization + FP hunt)
+--------------------------------------------------------------------------------
+
+This is what you actually run the skill against before zip. 12-18 sites, none
+of which you tuned checks to.
+
+  Archetype                    What you want              Where to look
+                               (find your own; don't memorize examples)
+  ---------------------------  -------------------------  ------------------------------------------
+  Known-good docs              almost no high/critical    MDN, Stripe docs, gov/edu handbooks,
+                                                          Wikipedia
+  SSR app that looks like SPA  must NOT flag CSR-gap      Next.js/Nuxt marketing sites with HTML
+                                                          in view-source
+  True CSR SPA                 MUST flag render gap       create-react-app / Vite SPA landing
+                                                          pages, some dashboards
+  WAF / bot-challenge          403/challenge vs browser   Cloudflare-fronted SaaS; confirm
+                                                          differential, not "Cloudflare = bad"
+  Schema-rich commerce         valid Product/Offer        Shopify catalog, open marketplace listing
+  Schema-poor SMB              missing org identity       local restaurant, clinic, contractor
+  Ambiguous name               entity confusion           colliding brand names, acronyms
+  Stale / date-liar            uniform lastmod or old     some corporate blogs, unmaintained
+                               year in "current" copy     product pages
+  Image-heavy / no alt         non-text lock-in           agency portfolios, fashion lookbooks,
+                                                          newsletter landing pages
+  Paywall / cookie wall        engagement + maybe         news publishers
+                               unreadable main
+  Docs with llms.txt           file present → at most     Mintlify/GitBook/Docusaurus docs
+                               low recs
+  Thin affiliate / doorway     extractability fail        comparison spam
+
+How to find them without a list from Adobe:
+
+  - From Corpus A, keep the pairs.
+  - BuiltWith / Wappalyzer / HTTP headers (x-powered-by, __next, cf-ray) to
+    fill archetypes, not to hard-code vendors.
+  - site:example.com filetype isn't useful; view-source is. If view-source is
+    empty and the tab is full, that's a render-gap candidate.
+  - Search GitHub for llms.txt / application/ld+json to find positives; search
+    "enable JavaScript to continue" for negatives.
+  - For WAF: fetch once with a browser UA and once with OAI-SearchBot; keep
+    sites where those differ.
+  - For FP: deliberately include sites you know are fine (MDN). If your report
+    yells at MDN, you lose.
+
+--------------------------------------------------------------------------------
+Adversarial fixtures (offline, in the zip as tests, not as skills)
+--------------------------------------------------------------------------------
+
+Save HTML snippets:
+
+  - SSR React with #root AND lots of text
+  - sr-only skip link
+  - truthful varied lastmod
+  - valid JSON-LD without @graph
+  - GPTBot Disallow but OAI-SearchBot Allow
+
+These are unit tests for gates. Live sites move; fixtures don't.
+
+--------------------------------------------------------------------------------
+What not to do
+--------------------------------------------------------------------------------
+
+  - Don't scrape thousands of sites. You have a 5-minute auditor, not a rank
+    tracker.
+  - Don't put studied URLs in the skill ("if domain is X…"). That's
+    anti-generalization and they said they won't ask which sites you studied.
+  - Don't use paid search APIs as a required path.
+  - Don't hammer the same host; delay, cap pages, respect robots.
+
+================================================================================
+WHAT I WOULD ACTUALLY OPTIMIZE FOR
+================================================================================
+
+If I were submitting, the README would say one sentence:
+
+  This marketplace audits the assistant pipeline — reach, read, extract,
+  identify, trust, land — with evidence, confidence, and a playbook of
+  mechanism-sound fixes. It refuses to treat training-bot policy, missing
+  llms.txt, or guessed Core Web Vitals as outages.
+
+That is the opposite of "AI SEO scanner." It matches how they wrote the
+appendix, how they wrote the rubric, and how they will grade unseen sites.
+
+When you start building, the first concrete artifacts are: marketplace.json,
+orchestrator SKILL.md, snapshot script, crawl-access skill with the
+training/retrieval split, and the FP fixtures. Everything else hangs off that.

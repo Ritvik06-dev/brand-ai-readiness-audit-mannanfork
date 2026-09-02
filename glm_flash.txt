@@ -1,0 +1,152 @@
+# Draft Approach: Adobe Hackathon R3 — Agent Skill Marketplace
+
+Below is a working plan that treats your base document as a strong starting hypothesis, corrects it against the actual PS text, and fills the gaps that the rubric will punish.
+
+---
+
+## 1. What the PS Actually Grades (Decoded)
+
+Reading the PS closely, three things stand out that should re-shape the base document:
+
+**a) The marketplace itself is the artifact being graded — not any single report.** "We evaluate the submitted marketplace itself — its skills' instructions, checks, logic, and how they're composed." This means instruction quality, determinism, and composition cleanliness matter as much as detection logic.
+
+**b) The sample SKILL.md description is effectively the coverage checklist.** It enumerates the failure modes they expect: *crawlability, JS-render gaps, missing/invalid structured data, facts locked in non-text, stale or uncorroborated facts, entity ambiguity, weak on-site orientation / no context retention*. Map every one of these to a concrete check — that's the detection floor.
+
+**c) Two rubric lines are where most teams will lose points:**
+- *"few false positives"* — a naive threshold-based checker will hallucinate problems on SSR sites, skip-links, and properly-dated sitemaps.
+- *"not padding"* — 8 skills that are just 8 copies of the same curl-and-regex pattern will read as padding. Each skill must earn its place with a distinct evidence source and a distinct fix family.
+
+**Gaps in the base document relative to the PS:**
+
+| Issue | Detail |
+|---|---|
+| **Email summarizability missing** | Appendix F explicitly describes it, and your diagnostic table covers it — but the marketplace has no skill/check for it. Cover it, even as an optional input mode (audit an email HTML file's text-to-image ratio, alt coverage). Cheap differentiator. |
+| **"Weak on-site orientation / no context retention" underbuilt** | Your engagement skill is mostly CWV. Add orientation checks: breadcrumbs, internal link density, consistent entity naming across pages, TL;DR blocks. The PS names this failure mode directly. |
+| **"Uncorroborated facts" is hand-waved** | True corroboration needs third-party lookups, but guardrails say self-contained + read-only sandbox. Design decision: on-page corroboration signals only (sameAs presence, schema/title/OG consistency), with optional live Wikidata HEAD checks that degrade gracefully offline and never produce false findings on timeout. |
+| **Headless render dependency** | `diff_render.py` implies Playwright. The judging sandbox likely won't have it, and 50MB zip / no model weights rules out bundling heavy binaries. Render parity must work with raw-HTML heuristics alone and treat headless as an *enhancer* that raises confidence, never a requirement. |
+| **Malformed frontmatter** | The pasted YAML is broken; also `allowed-tools: Bash(python3:*) Bash(curl:*)` needs one-per-line or list syntax. Every skill must pass `skills-ref validate`. |
+| **IndexNow "integration"** | The PS is recommend-only — the skill must never ping IndexNow itself. It appears only as written advice in the report. |
+
+---
+
+## 2. Field Research Protocol ("Learn from the Wild")
+
+The PS is explicit that signal discovery is part of the task, even though studied sites aren't graded. Budget ~1 day:
+
+1. **Query bank:** 30–40 real questions across verticals ("how does X work", "X vs Y pricing", "best X for Y").
+2. **Cited-vs-uncited pairs:** Run queries on 2–3 citation-showing assistants (Perplexity, ChatGPT search, Copilot). For each query, pick one cited domain and one same-vertical uncited domain.
+3. **Signal diffing:** For each pair, manually run the diagnostic signals (raw `curl` word count, schema presence, heading tree, first-paragraph answerability, lastmod hygiene, UA-differential fetch). Record in a **signals ledger** (CSV): `signal | cited? | value | direction`.
+4. **Distill:** Signals that consistently separate the pairs become checks; their observed ranges seed `references/thresholds.json`; recurring quotes become evidence templates.
+
+This ledger doubles as README material — it's your proof of "design for patterns, not fit-to-examples."
+
+---
+
+## 3. Marketplace Architecture
+
+```
+brand-ai-readiness-audit/
+├── marketplace.json
+├── README.md                  # per-skill description + composition diagram
+├── skills/
+│   ├── audit-orchestrator/    # entrypoint: sampling, dispatch, aggregation, validation
+│   │   ├── SKILL.md
+│   │   ├── scripts/aggregate_reports.py
+│   │   └── references/output_schema.json + remediation_playbook.json
+│   ├── crawl-edge-audit/      # transport layer: WAF, robots, sitemap, llms.txt
+│   ├── render-parity-audit/   # CSR gaps + facts locked in non-text
+│   ├── content-chunkability-audit/  # BLUF, heading tree, tables (+ email aux mode)
+│   ├── structured-data-audit/ # JSON-LD validity, @graph, sameAs, entity ambiguity
+│   ├── freshness-corroboration-audit/
+│   ├── integrity-audit/       # hidden text, prompt injection, safety-filter risk
+│   └── engagement-friction-audit/   # CWV heuristics + orientation/retention
+```
+
+**Why this decomposition isn't padding** — each skill has a distinct data source, evidence type, and fix family:
+
+| Skill | Evidence source | Fix family |
+|---|---|---|
+| crawl-edge | HTTP status/header differentials, robots/sitemap XML | Edge/WAF config |
+| render-parity | Raw-vs-rendered text ratios, DOM shell patterns | SSR/prerender architecture |
+| chunkability | Heading tree, paragraph structure, table semantics | Editorial/content ops |
+| structured-data | JSON-LD parse results, graph topology | Schema engineering |
+| freshness | Timestamp cross-comparison | CMS pipeline |
+| integrity | CSS/comment/pattern scans | Security remediation |
+| engagement | DOM/media heuristics, layout metrics | Frontend performance + IA |
+
+**Composition model (be explicit in the orchestrator):** sub-skills are *instruction docs + deterministic scripts*; the orchestrator doesn't "invoke" them mystically — it tells the agent, in numbered steps: run script X from skill Y with these flags, read its JSON fragment, then aggregate. Every sub-skill emits a findings fragment conforming to the same finding schema; the aggregator merges, dedupes, renumbers IDs, computes severity counts, and validates against `output_schema.json` before emission.
+
+**Runtime budget (<5 min is a hard constraint):**
+- Page sampling: homepage + up to ~6 sitemap-discovered pages covering distinct templates (cluster by URL path depth/pattern), capped further if slow.
+- Per-request timeout 10s, concurrency ≤3, ~750ms delay, single retry. Global deadline ~240s → emit partial report with explicit coverage note rather than overrun.
+- All scripts stdlib-only (`urllib`, `html.parser`, `re`, `json`) for portability — no pip installs in the sandbox.
+
+---
+
+## 4. Check Catalog with Severity Gates (Anti-False-Positive Core)
+
+Each finding requires **differential evidence** — this is your main defense against the "few false positives" rubric line. Proposed gates:
+
+| PS failure mode | Check (deterministic) | Severity gate |
+|---|---|---|
+| Crawlability / WAF | UA-differential probe: browser UA → 200, AI UAs (GPTBot, OAI-SearchBot, ClaudeBot, PerplexityBot, Google-Extended) → 403/429 or `cf-mitigated` header; robots.txt Disallow rules for AI UAs | **Critical** only when differential holds (browser passes + bot blocked). A flat 403 to everyone = site down, different finding. |
+| JS-render gaps | Raw visible word count < floor (~100) AND empty-root-shell patterns (`<div id="root">` empty, heavy script/byte ratio); if headless available: rendered/raw word ratio > 2.5 | High; if headless unavailable, emit with `confidence: medium` and shell-pattern evidence — never assert from one weak signal |
+| Facts locked in non-text | Image-only sections, missing alt on content images, canvas-delivered content, div-grid "tables" (no `<table>/<th>`) with ≥3 aligned columns | Medium–High |
+| Chunkability | Heading-level skips, first paragraph under H2 lacking declarative answer (heuristic: entity+number within N tokens), paragraphs far outside 256–512-token chunk windows | Medium |
+| Structured data missing/invalid | JSON-LD parse failures; required types by template (Organization site-wide, Product/Offer on commerce paths, Article on editorial); zero `sameAs` | High |
+| Entity ambiguity | Org name inconsistent across JSON-LD / `<title>` / OG tags; no disambiguating `sameAs`/description | Medium–High |
+| Stale / uncorroborated | Sitemap `lastmod` uniform across ≥80% URLs; conflicts with on-page `dateModified` by >30 days; evergreen pages (pricing, about) with no date signals | Medium |
+| Safety / injection | Hidden CSS (`-9999px`, `font-size:0` — **whitelist `sr-only`/skip-links**), adversarial regex in comments/hidden nodes | High (safety-driven de-indexing risk) |
+| Engagement friction | Undimensioned media, webfonts without `font-display`, overlay/popup selectors, ad-script density, CLS-proxy from late-loading heroes | Medium |
+| Orientation / retention | No breadcrumbs, thin internal links (avg < 3 contextual/page), no summary blocks, inconsistent entity naming | Medium |
+| llms.txt absent | 404 on both paths | **Low** (proactive; flagging it critical is a classic FP) |
+
+Add a `confidence` field (high/medium/low) to each finding — allowed by the schema ("a floor, not a ceiling") and directly signals FP-awareness to graders.
+
+---
+
+## 5. Suggested Actions & Proactive Layer
+
+- **Templated remediation:** keep `references/remediation_playbook.json` keyed by check ID — summary text, mechanism rationale, code-level hint, effort estimate (S/M/L). The LLM *selects and contextualizes*; it doesn't invent mechanisms. This makes outputs deterministic and mechanism-sound (exact rubric wording).
+- **Proactive (no-defect) recommendations** — the rubric rewards "relevant and non-obvious" beyond-problem suggestions:
+  - Publish `llms.txt` manifest of canonical docs
+  - IndexNow hook *for the site owner* (advice only)
+  - `Accept: text/markdown` content negotiation at the edge (the 94% token-reduction argument)
+  - FAQ/HowTo schema on documentation, `sameAs` graph completion
+  - Email text-fallback practices if newsletter archives found
+
+---
+
+## 6. Validation & Generalization Plan
+
+- **Corpus:** 15–20 unseen-style sites across archetypes — SSG docs (MDN/Stripe-like), SPA SaaS, WordPress publisher, e-commerce, local SMB, .gov/.edu. Expect clean sites to yield near-zero findings; that's the FP test.
+- **Adversarial FP suite:** SSR React apps (must NOT flag as CSR-gap), sites with legitimate `sr-only` text (must NOT flag as hidden-text), sitemaps with truthful dynamic lastmod (must NOT flag). Tune thresholds against these.
+- **Unit tests on HTML fixtures** (saved pages, offline, deterministic); integration runs live with mocked clock for freshness checks.
+- **Compliance:** `skills-ref validate` every folder; JSON-schema-validate sample outputs; runtime benchmark on the worst-case corpus site.
+
+---
+
+## 7. Build Order (Take-Home Split)
+
+1. **Phase 0 (Day 1):** Field research → signals ledger → threshold priors
+2. **Phase 1 (0.5d):** Skeleton — manifest, orchestrator SKILL.md, output schema, fixture harness
+3. **Phase 2 (2–3d, parallelizable per skill):** Scripts + unit tests; graceful-degradation paths first
+4. **Phase 3 (1d):** Aggregator, remediation playbook, executive summary generation
+5. **Phase 4 (1d):** Corpus calibration + FP hunt (this is where rubric points are won)
+6. **Phase 5 (0.5d):** README (per-skill description + composition diagram + design decisions: robots compliance, degradation matrix), final zip ≤50MB
+
+**Deliberately not building:** any site modification, IndexNow pings, paid search APIs (Exa/Tavily — self-contained requirement), authenticated crawling, heavy Python deps, anything ignoring robots.txt.
+
+---
+
+## Key Risks
+
+| Risk | Mitigation |
+|---|---|
+| Headless unavailable in sandbox | Raw-HTML heuristics are primary; headless only raises confidence |
+| FP inflation on diverse stacks | Differential evidence + confidence field + adversarial suite |
+| Padding perception | Every skill has its own scripts + references + distinct evidence source; README justifies decomposition explicitly |
+| Runtime overrun | Deadline-aware scheduler, page caps, partial-report fallback |
+| LLM nondeterminism in actions | Playbook-templated actions; agent only selects/adjusts |
+
+The single biggest strategic call: **treat false-positive suppression as a first-class feature**, not an afterthought — it's explicitly graded, it's what separates a real audit tool from a regex dump, and your current base document doesn't yet have a mechanism for it.

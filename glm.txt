@@ -1,0 +1,961 @@
+# Final Blueprint: Adobe University Hackathon 2026 Round 3 Submission
+
+## Executive Summary
+
+Build a **7-skill marketplace** where each skill owns one Round-2 failure mode, the intelligence lives in the **SKILL.md instructions** (not Python scripts), and every finding includes **evidence + severity + mechanism-grounded fix**. The judges open your zip and read markdown — give them a reasoning-encoding masterpiece, not a web-scraping tool.
+
+---
+
+## Part 1: Final Architecture
+
+```mermaid
+flowchart TD
+    A[audit-orchestrator<br/>ENTRYPOINT] --> B[crawl-edge-audit<br/>Failure Mode A]
+    A --> C[render-parity-audit<br/>Failure Mode C]
+    A --> D[semantic-structure-audit<br/>Failure Mode C]
+    A --> E[entity-graph-audit<br/>Failure Mode D]
+    A --> F[freshness-corroboration-audit<br/>Failure Mode D]
+    A --> G[engagement-friction-audit<br/>Modes E + Engagement]
+    A --> H[Report Composer<br/>JSON Schema Output]
+```
+
+**Why 7 skills (not 8)?** We cut the security-integrity-audit because IPI detection isn't a discoverability/engagement failure mode — it's a security concern outside the problem scope. We fold the useful "hidden text" check into `semantic-structure-audit` (hidden text is a machine-readability failure, not a security failure).
+
+---
+
+## Part 2: The Marketplace Structure
+
+```
+brand-ai-readiness-audit/
+├── marketplace.json
+├── README.md
+└── skills/
+    ├── audit-orchestrator/
+    │   ├── SKILL.md
+    │   └── references/
+    │       └── output_schema.json
+    ├── crawl-edge-audit/
+    │   └── SKILL.md
+    ├── render-parity-audit/
+    │   └── SKILL.md
+    ├── semantic-structure-audit/
+    │   └── SKILL.md
+    ├── entity-graph-audit/
+    │   └── SKILL.md
+    ├── freshness-corroboration-audit/
+    │   └── SKILL.md
+    └── engagement-friction-audit/
+        └── SKILL.md
+```
+
+**No `scripts/` directories in the final submission.** Here's why:
+
+1. **The judges evaluate "skills' instructions, checks, logic"** — they read SKILL.md files
+2. **Skills must work in any environment** — a judge might not have Python execution
+3. **The intelligence goes into the procedure** — the agent follows steps, doesn't run code
+4. **It's simpler and cleaner** — fewer failure modes in the judge's environment
+
+If you want to include one optional helper script (e.g., `check_edge_access.py` for the edge probing), include it in `crawl-edge-audit/scripts/` — but the SKILL.md procedure must work without it by telling the agent to use `curl` commands directly.
+
+---
+
+## Part 3: The SKILL.md Templates
+
+### 3.1 Marketplace Manifest (`marketplace.json`)
+
+```json
+{
+  "name": "brand-ai-readiness-audit",
+  "version": "1.0.0",
+  "description": "Multi-skill marketplace auditing websites for AI-discoverability and on-site engagement problems per the Adobe Hackathon 2026 Round 3 spec.",
+  "skills": [
+    {
+      "id": "audit-orchestrator",
+      "path": "skills/audit-orchestrator",
+      "entrypoint": true
+    },
+    {
+      "id": "crawl-edge-audit",
+      "path": "skills/crawl-edge-audit"
+    },
+    {
+      "id": "render-parity-audit",
+      "path": "skills/render-parity-audit"
+    },
+    {
+      "id": "semantic-structure-audit",
+      "path": "skills/semantic-structure-audit"
+    },
+    {
+      "id": "entity-graph-audit",
+      "path": "skills/entity-graph-audit"
+    },
+    {
+      "id": "freshness-corroboration-audit",
+      "path": "skills/freshness-corroboration-audit"
+    },
+    {
+      "id": "engagement-friction-audit",
+      "path": "skills/engagement-friction-audit"
+    }
+  ]
+}
+```
+
+### 3.2 Entrypoint: `audit-orchestrator/SKILL.md`
+
+```yaml
+---
+name: audit-orchestrator
+description: Coordinate and execute a comprehensive brand AI-readiness and on-site engagement audit for any given website. Use when diagnosing why a website is missing from AI assistant citations or experiencing high visitor bounce rates. This is the entrypoint that composes specialized sub-skills into a single structured report.
+license: Apache-2.0
+metadata:
+  version: "1.0.0"
+  author: "Adobe-Hackathon-Team"
+allowed-tools: Read Bash(curl:*)
+---
+
+# Brand AI-Readiness Audit Orchestrator
+
+## When to Use
+Invoke this entrypoint skill when asked to audit a website domain for:
+- AI discoverability problems (why the brand isn't found/cited by AI assistants)
+- On-site engagement problems (why visitors who arrive don't stay)
+
+This skill orchestrates specialized sub-skills and composes their findings into a single structured report.
+
+## Inputs
+* `target_url`: Fully qualified HTTP/HTTPS domain string (e.g., `https://example.com`)
+
+## Procedure
+
+### 1. Pre-flight Verification
+Before starting, verify network connectivity:
+```bash
+curl -I -s --max-time 10 "{target_url}"
+```
+If this fails, emit a report with a single critical finding: "Site unreachable — cannot audit."
+
+### 2. Sequential Sub-Skill Execution
+Execute each sub-skill in order, passing `{target_url}` and collecting JSON findings:
+
+1. **crawl-edge-audit** → Check if AI crawlers can access the site at all
+2. **render-parity-audit** → Check if content is visible without JavaScript execution
+3. **semantic-structure-audit** → Check if content is structured for machine extraction
+4. **entity-graph-audit** → Check if the brand's identity is unambiguous to AI systems
+5. **freshness-corroboration-audit** → Check if content freshness signals are truthful
+6. **engagement-friction-audit** → Check if the site retains visitors once they arrive
+
+For each sub-skill, invoke it by reading its SKILL.md and following its procedure. Collect its JSON findings output.
+
+### 3. Findings Aggregation
+Combine all sub-skill findings into a single array. For each finding, verify:
+- Has `id` (unique across the report, format: `F-001`, `F-002`, etc.)
+- Has `title` (clear, actionable description)
+- Has `severity` (critical | high | medium | low)
+- Has `evidence` (concrete observation, not assumption)
+- Has `suggested_action` (with `summary`, `priority`, and `mechanism_rationale`)
+
+### 4. Severity Normalization
+If multiple skills report the same underlying issue, deduplicate and keep the highest severity. Example: if both `crawl-edge-audit` and `render-parity-audit` report "content invisible to crawlers," merge into one finding.
+
+### 5. Report Emission
+Construct the final JSON report following the schema in `references/output_schema.json`:
+
+```json
+{
+  "site": "{target_url}",
+  "audited_at": "{current ISO 8601 timestamp}",
+  "summary": {
+    "total_findings": {count},
+    "critical": {count},
+    "high": {count},
+    "medium": {count},
+    "low": {count}
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "...",
+      "severity": "...",
+      "evidence": "...",
+      "suggested_action": {
+        "summary": "...",
+        "priority": "...",
+        "mechanism_rationale": "..."
+      }
+    }
+  ]
+}
+```
+
+### 6. Proactive Recommendations
+In addition to detected problems, include 2-3 proactive improvements (marked as `severity: "low"` with `priority: "informational"`) that would strengthen discoverability or engagement even where no explicit defect was found. Examples:
+- "Consider implementing llms.txt as a machine-readable directory for AI agents"
+- "Consider adding IndexNow protocol integration for faster AI search discovery"
+
+## Output
+A single JSON audit report conforming to the schema in `references/output_schema.json`.
+
+## Error Handling
+- If any sub-skill fails to execute, note the failure in the report's `summary` section (e.g., `"render_parity_check": "skipped — browser rendering unavailable"`)
+- If the site blocks all requests, emit a single critical finding and stop
+- If robots.txt disallows crawling of the entire site, note this and audit only robots.txt and sitemap.xml (which are always fetchable)
+```
+
+### 3.3 `crawl-edge-audit/SKILL.md`
+
+```yaml
+---
+name: crawl-edge-audit
+description: Inspect website perimeter accessibility — robots.txt AI bot permissions, sitemap integrity, llms.txt presence, and WAF/firewall blocks. Use when diagnosing if AI crawlers are blocked from accessing a site at the transport level.
+license: Apache-2.0
+allowed-tools: Read Bash(curl:*)
+---
+
+# Crawl Edge Audit
+
+## When to Use
+Use to verify if automated search crawlers and AI retrieval bots can fetch a target website without encountering transport or firewall blocks. This addresses failure mode A (crawler access) from the Round-2 framework.
+
+## Inputs
+* `target_url`: The domain URL to evaluate
+
+## Procedure
+
+### 1. robots.txt Analysis
+Fetch `{target_url}/robots.txt`:
+```bash
+curl -s "{target_url}/robots.txt"
+```
+
+Parse the response for:
+- **AI bot User-Agent rules**: Check for `Disallow` directives affecting:
+  - `GPTBot` (OpenAI training)
+  - `OAI-SearchBot` (OpenAI search)
+  - `ClaudeBot` (Anthropic)
+  - `PerplexityBot` (Perplexity)
+  - `Googlebot` (Google)
+  - `Bingbot` (Microsoft)
+  
+- **Sitemap directive**: Check for `Sitemap: {url}` line pointing to a valid sitemap
+
+- **Crawl-delay**: Note any `Crawl-delay` directive (relevant for rate-limiting awareness)
+
+**Evidence format**: "robots.txt line 12: `Disallow: /` applies to User-agent: GPTBot — OpenAI training crawler blocked from all content"
+
+**Severity mapping**:
+- AI search bot blocked (OAI-SearchBot, ClaudeBot, PerplexityBot, Googlebot) → **critical**
+- AI training bot blocked (GPTBot, ClaudeBot for training) → **medium** (policy choice, not visibility blocker)
+- No robots.txt at all (4xx/5xx response) → **high** (crawlers assume no restrictions, but no guidance)
+- robots.txt present but no AI bot rules → **informational** (default allows)
+
+### 2. Sitemap Validation
+Fetch the sitemap URL (from robots.txt directive, or try `{target_url}/sitemap.xml`):
+```bash
+curl -s -o /dev/null -w "%{http_code}" "{target_url}/sitemap.xml"
+```
+
+Check:
+- HTTP status 200
+- Valid XML structure
+- Contains `<urlset>` with `<url>` entries
+- Each URL has `<loc>` and optionally `<lastmod>`
+
+**Evidence format**: "sitemap.xml returned HTTP 200 with 48 URL entries; 12 have lastmod timestamps"
+
+**Severity mapping**:
+- Sitemap missing or 404 → **high**
+- Sitemap present but invalid XML → **medium**
+- Sitemap present and valid → no finding (pass)
+
+### 3. llms.txt Probe
+Check for the emerging AI-crawler guidance convention:
+```bash
+curl -s -o /dev/null -w "%{http_code}" "{target_url}/llms.txt"
+curl -s -o /dev/null -w "%{http_code}" "{target_url}/.well-known/llms.txt"
+```
+
+**Evidence format**: "Probed /llms.txt and /.well-known/llms.txt — both returned 404"
+
+**Severity**: **low** (informational — not yet a ranking factor, but useful for AI agent guidance)
+
+### 4. WAF/Firewall Detection
+Send probes with different User-Agent headers to detect bot-specific blocking:
+```bash
+# Test with AI bot user-agent
+curl -s -o /dev/null -w "%{http_code}" -H "User-Agent: Mozilla/5.0 (compatible; PerplexityBot/1.0; +https://perplexity.ai/perplexitybot)" "{target_url}"
+
+# Test with standard browser user-agent
+curl -s -o /dev/null -w "%{http_code}" -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36" "{target_url}"
+```
+
+Also check response headers for:
+- `cf-mitigated: challenge` (Cloudflare bot challenge)
+- `server: cloudflare` with 403 status
+- Any WAF-specific headers indicating bot blocking
+
+**Rate-limit awareness**: Space these probes at least 2 seconds apart to avoid triggering rate limits.
+
+**Evidence format**: "User-Agent 'PerplexityBot/1.0' received HTTP 403 Forbidden while standard browser User-Agent received HTTP 200 OK — WAF is blocking AI crawlers"
+
+**Severity mapping**:
+- AI search bots receive 403/challenge while browsers receive 200 → **critical**
+- All requests receive 403 → **critical** (site blocks all automated access)
+- No bot-specific blocking detected → no finding (pass)
+
+## Output
+JSON findings array with fields: `id`, `title`, `severity`, `evidence`, `suggested_action`
+
+## Suggested Actions Reference
+
+For "AI bots blocked in robots.txt":
+- **Summary**: "Remove Disallow rules for OAI-SearchBot, ClaudeBot, and PerplexityBot in robots.txt"
+- **Priority**: critical
+- **Mechanism rationale**: "AI answer engines like ChatGPT and Perplexity rely on real-time web retrieval via their search crawlers. Blocking these user-agents prevents document fetching entirely, rendering the brand invisible in generative queries regardless of content quality."
+
+For "WAF blocking AI crawlers":
+- **Summary**: "Configure Cloudflare/WAF custom rules to allow verified AI crawler user-agents (OAI-SearchBot, ClaudeBot, PerplexityBot)"
+- **Priority**: critical
+- **Mechanism rationale**: "Edge firewalls returning 403 prevent AI search crawlers from fetching documents. Even if content is perfectly structured, it cannot enter the retrieval pipeline if the transport layer blocks access."
+```
+
+### 3.4 `render-parity-audit/SKILL.md`
+
+```yaml
+---
+name: render-parity-audit
+description: Compare raw HTML with rendered DOM to detect JavaScript rendering gaps that make content invisible to static crawlers. Use when diagnosing why pages appear complete to humans but empty to AI systems and search engines.
+license: Apache-2.0
+allowed-tools: Read Bash(curl:*)
+---
+
+# Render Parity Audit
+
+## When to Use
+Use to check if a website's core content is available in the server's initial HTML response versus only appearing after JavaScript execution. This addresses failure mode C (machine readability) — specifically the "content only assembled after page loads" issue.
+
+## Inputs
+* `target_url`: The URL to evaluate
+
+## Procedure
+
+### 1. Fetch Raw HTML
+```bash
+curl -s "{target_url}" > /tmp/raw.html
+```
+
+Analyze the raw HTML for:
+- **Total word count** in `<body>` (strip scripts, styles)
+- **Meta tags**: `<title>`, `<meta name="description">`, Open Graph tags
+- **Key content indicators**: `<h1>`, `<h2>`, paragraphs with substantial text
+- **SPA framework markers**: empty `<div id="root">`, `<div id="app">`, `<noscript>` warnings
+
+### 2. Detect JS-Only Content (Without Browser)
+
+If browser rendering is unavailable, check raw HTML for these indicators:
+
+**SPA framework signatures**:
+- `<div id="root"></div>` or `<div id="app"></div>` with minimal content
+- Multiple `<script src="*.js">` references to framework bundles (react, vue, angular)
+- `<noscript>` tag containing "JavaScript is required" or similar
+
+**Minimal content in raw HTML**:
+- If `<body>` contains fewer than 50 words of actual text content
+- If no `<h1>` or `<h2>` tags are present
+- If meta description is missing or generic
+
+**Evidence format**: "Raw HTML contains 412 words in body, with empty `<div id='root'>` and 3 JS bundle references — indicates React SPA where content renders client-side only"
+
+### 3. Conditional: Browser-Enhanced Analysis
+
+If a browser rendering tool is available (WebFetch, headless browser, or similar):
+1. Render `{target_url}` and save the DOM
+2. Compare word counts: raw HTML vs. rendered DOM
+3. Check for meta tags present in rendered but missing in raw
+4. Check for content elements (`<h1>`, `<h2>`, pricing tables, service descriptions) that appear only in rendered DOM
+
+If browser rendering is NOT available:
+- Note this limitation in findings: "Browser rendering unavailable — analysis based on raw HTML only"
+- Flag as "potential render gap" rather than "confirmed render gap"
+
+### 4. Specific Content Checks
+
+**Pricing/informational content**:
+Look for common patterns where critical business information is JS-rendered:
+- Pricing tables using JS components (check for `class="pricing"` or similar in rendered vs. raw)
+- Contact information in JS-loaded components
+- Product/service descriptions only in dynamic sections
+
+**Evidence format**: "Raw HTML contains empty pricing section (`<div class='pricing'></div>`) but no actual prices — prices are injected via JavaScript"
+
+### Severity Mapping
+- Core content (h1, h2, main paragraphs, pricing) missing from raw HTML but present in rendered → **high**
+- Some content missing but critical facts available → **medium**
+- Raw HTML and rendered DOM equivalent → no finding (pass)
+- SPA detected but content also available via SSR or pre-rendering → **informational**
+
+## Suggested Actions Reference
+
+For "Client-side rendering gap on core content":
+- **Summary**: "Implement Server-Side Rendering (SSR) or static pre-rendering for public pages, or ensure critical facts exist in initial HTML"
+- **Priority**: high
+- **Mechanism rationale**: "AI crawlers and search spiders often fetch raw HTML without executing JavaScript. Content that only exists after JS execution is invisible to these systems. Even Googlebot's rendering queue has latency and may not execute all JS — critical facts should exist in the initial server response."
+
+For "SPA framework with no SSR":
+- **Summary**: "Add pre-rendering (e.g., Next.js static export, Prerender.io) for key marketing and documentation pages"
+- **Priority**: high
+- **Mechanism rationale**: "Pre-rendering generates static HTML snapshots that contain the same content as the JS-rendered version, making it accessible to crawlers that don't execute JavaScript."
+```
+
+### 3.5 `semantic-structure-audit/SKILL.md`
+
+```yaml
+---
+name: semantic-structure-audit
+description: Evaluate content structure for machine extractability — heading hierarchy, BLUF (Bottom Line Up Front) placement, semantic table markup, and text alternatives for non-text content. Use when content exists but isn't structured for AI passage retrieval.
+license: Apache-2.0
+allowed-tools: Read
+---
+
+# Semantic Structure Audit
+
+## When to Use
+Use to check if page content is structured so AI systems can extract specific facts. This addresses failure mode C (machine readability) — specifically "the more explicitly and unambiguously a fact is stated in plain, readable text, the more likely a machine is to extract it."
+
+## Inputs
+* `html_content`: Raw or rendered HTML of the page to analyze
+
+## Procedure
+
+### 1. Heading Hierarchy Validation
+Extract all heading tags (`<h1>` through `<h4>`) in document order.
+
+Check for:
+- **Exactly one `<h1>`** per page (or at least one present)
+- **No skipped levels**: `<h1>` should be followed by `<h2>`, not `<h3>`
+- **Logical grouping**: headings should describe the content beneath them
+
+**Evidence format**: "Page has `<h1>` followed directly by `<h3>` (skipping `<h2>`) — 2 instances found. Heading tree: h1 → h3 → h3 → h2 → h3"
+
+**Severity mapping**:
+- No `<h1>` present → **high**
+- Multiple `<h1>` tags → **medium**
+- Skipped heading levels → **medium**
+- Correct hierarchy → no finding (pass)
+
+### 2. BLUF (Bottom Line Up Front) Check
+
+For each `<h2>` or `<h3>` section, examine the first paragraph beneath it.
+
+Check if:
+- The first paragraph contains a **clear factual statement** (not narrative buildup)
+- Key information appears **within the first 60 words** of the section
+- The section's conclusion isn't buried after multiple paragraphs of context
+
+**Evidence format**: "Under `<h2>How Our Pricing Works</h2>`, the first factual pricing statement ('Plans start at $29/month') appears 145 words into the section, after 2 paragraphs of company background"
+
+**Severity mapping**:
+- Key facts buried >200 words into section → **medium**
+- Facts present but after narrative buildup → **low**
+- BLUF pattern followed → no finding (pass)
+
+**Mechanism rationale for fixes**: "RAG (Retrieval-Augmented Generation) systems chunk documents into 256-512 token windows for vector search. If a core fact is preceded by narrative filler, it gets split across chunk boundaries, reducing its retrieval score. Placing the factual answer immediately after the heading ensures every chunk containing that section also contains the answer."
+
+### 3. Semantic Table Markup
+
+Look for tables or table-like data presentations.
+
+Check:
+- **Semantic tables**: Use `<table>`, `<thead>`, `<tbody>`, `<th>`, `<td>` tags
+- **CSS layout tables**: Use `<div>` with Flexbox or Grid for tabular data
+
+**Evidence format**: "Pricing comparison uses CSS Grid with `<div>` elements (`<div class='pricing-grid'>`) rather than semantic `<table>` markup — 3 columns of pricing data will not convert cleanly to Markdown for AI processing"
+
+**Severity mapping**:
+- Critical data (pricing, specs, comparisons) in CSS layout instead of semantic table → **medium**
+- Semantic tables used correctly → no finding (pass)
+
+### 4. Text Alternatives for Non-Text Content
+
+Check for:
+- **Images containing text**: Look for `<img>` tags without meaningful `alt` attributes (or with `alt=""`)
+- **Videos without transcripts**: `<video>` or `<iframe>` (YouTube embeds) without text description nearby
+- **Canvas/SVG with locked content**: `<canvas>` or `<svg>` elements containing what appears to be text or data
+
+**Evidence format**: "Hero section contains image with text 'Trusted by 500+ companies' but `alt` attribute is empty — this social proof is invisible to screen readers and AI systems"
+
+**Severity mapping**:
+- Critical facts locked in images without alt text → **high**
+- Some images missing alt but non-critical → **low**
+- All images have meaningful alt text → no finding (pass)
+
+### 5. Hidden Text Detection (for machine readability)
+
+Check for CSS patterns that hide text from visual rendering:
+- `style="display: none"` or `style="visibility: hidden"`
+- `style="left: -9999px"` or `style="position: absolute; left: -9999px"`
+- `style="font-size: 0"` or `style="color: transparent"`
+
+**Important context**: Hidden text can be legitimate (accessibility labels, skip navigation) or manipulative (keyword stuffing). Check what the hidden text contains:
+- If it contains instructions like "ignore previous instructions" or suspicious commands → flag as potential prompt injection (informational, not a discoverability issue)
+- If it contains keyword-stuffed text not visible to users → flag as cloaking risk
+
+**Severity**: **medium** for suspicious hidden text, **informational** for accessibility uses
+
+## Output
+JSON findings array with fields: `id`, `title`, `severity`, `evidence`, `suggested_action`
+```
+
+### 3.6 `entity-graph-audit/SKILL.md`
+
+```yaml
+---
+name: entity-graph-audit
+description: Validate JSON-LD structured data for entity disambiguation — Organization schema, sameAs authority links, @graph connectivity, and Wikidata/Wikipedia references. Use when diagnosing why AI systems confuse or misrepresent a brand.
+license: Apache-2.0
+allowed-tools: Read
+---
+
+# Entity Graph Audit
+
+## When to Use
+Use to check if a website's structured data clearly identifies the brand as a unique entity that AI knowledge graphs can resolve. This addresses failure mode D (entity disambiguation) — "when several different things share a name, a system can mix them up unless there's something that clearly distinguishes one from the others."
+
+## Inputs
+* `html_content`: Raw or rendered HTML containing JSON-LD blocks
+
+## Procedure
+
+### 1. JSON-LD Extraction
+
+Find all `<script type="application/ld+json">` blocks in the HTML.
+
+For each block:
+- Parse as JSON (check syntactic validity)
+- Identify the `@type` (Organization, Product, WebPage, Person, etc.)
+- Note the `@id` (if present) for entity linking
+
+**Evidence format**: "Found 2 JSON-LD blocks: 1 WebPage schema (valid) and 1 Organization schema (valid). No @graph array connecting them."
+
+### 2. Entity Completeness Check
+
+For the **Organization** entity (if present), check for:
+
+**Required properties**:
+- `name` (the brand name)
+- `url` (the canonical website URL)
+- `logo` (brand logo image URL)
+
+**Strongly recommended**:
+- `sameAs` — array of URLs to authoritative external profiles:
+  - Wikidata entity (e.g., `https://www.wikidata.org/wiki/Q12345`)
+  - Wikipedia page (if exists)
+  - LinkedIn company page
+  - Crunchbase profile
+  - Other authoritative directories
+
+**Optional but valuable**:
+- `description` (what the company does, in plain text)
+- `foundingDate` (when established)
+- `founder` (link to Person entity)
+- `address` / `location` (for local businesses)
+- `contactPoint` (customer service info)
+
+**Evidence format**: "Organization schema present but missing `sameAs` property — no links to Wikidata, Wikipedia, or LinkedIn to establish authoritative identity"
+
+### 3. @Graph Connectivity
+
+If multiple JSON-LD blocks exist, check for:
+- A `@graph` array that connects entities (e.g., Organization → WebSite → Product)
+- Cross-references via `@id` (e.g., `"publisher": {"@id": "#organization"}`)
+
+**Evidence format**: "3 separate JSON-LD blocks (Organization, WebSite, Product) exist but are not connected via @graph — each is an isolated entity with no relationships"
+
+### 4. Entity Disambiguation Signals
+
+Check for brand name ambiguity:
+- Does the brand name have common homonyms? (e.g., "Apple" could be fruit or company)
+- Does the site provide clear signals to distinguish? (category, location, founding date)
+- Are there `sameAs` links to disambiguation pages?
+
+**Evidence format**: "Brand 'Phoenix Systems' has no sameAs links and no description clarifying whether this is the software company, the fire systems company, or another entity sharing the name"
+
+### Severity Mapping
+- No Organization schema at all → **high**
+- Organization schema present but missing `name`, `url`, or `logo` → **medium**
+- Organization schema present but no `sameAs` links → **medium** (entity resolution weak)
+- JSON-LD present but syntactically invalid → **high**
+- Complete Organization schema with sameAs → no finding (pass)
+- @graph connections between entities → **informational** (bonus points)
+
+## Suggested Actions Reference
+
+For "No Organization schema":
+- **Summary**: "Add Organization JSON-LD with name, url, logo, and sameAs properties"
+- **Priority**: high
+- **Mechanism rationale**: "AI systems use knowledge graphs to resolve entities. Without Organization schema, the brand has no machine-readable identity, making it harder for retrieval systems to distinguish this company from others with similar names."
+
+For "Missing sameAs links":
+- **Summary**: "Add sameAs array to Organization schema linking to Wikidata (if exists), LinkedIn company page, and Crunchbase profile"
+- **Priority**: medium
+- **Mechanism rationale**: "sameAs links connect your entity to authoritative external sources. AI systems treat facts as more trustworthy when multiple independent sources agree. Without sameAs, your brand exists as an isolated node with no cross-web corroboration."
+```
+
+### 3.7 `freshness-corroboration-audit/SKILL.md`
+
+```yaml
+---
+name: freshness-corroboration-audit
+description: Check temporal accuracy — sitemap lastmod truthfulness, on-page publication dates, and stale content detection. Use when diagnosing why AI systems serve outdated information about a brand or distrust its freshness signals.
+license: Apache-2.0
+allowed-tools: Read Bash(curl:*)
+---
+
+# Freshness Corroboration Audit
+
+## When to Use
+Use to verify that a website's freshness signals are truthful and consistent. This addresses failure mode D (agreement across the web) — specifically stale or uncorroborated facts.
+
+## Inputs
+* `target_url`: Domain to check
+* `sitemap_xml`: Sitemap XML content (from crawl-edge-audit)
+
+## Procedure
+
+### 1. Sitemap lastmod Analysis
+
+Parse sitemap.xml for `<lastmod>` timestamps.
+
+Check for:
+- **Uniform timestamps**: All URLs having the exact same lastmod (indicates CMS build-time stamping, not actual content updates)
+- **Future timestamps**: lastmod dates in the future (invalid)
+- **Very old timestamps**: lastmod > 1 year ago with no recent updates
+
+**Evidence format**: "All 48 URLs in sitemap.xml share identical lastmod timestamp '2026-01-01T00:00:00Z' — indicates build pipeline stamps all pages with deployment time, not content modification time"
+
+**Severity mapping**:
+- Uniform lastmod across all URLs → **medium** (untruthful freshness signal)
+- No lastmod values present → **low** (missing freshness signal)
+- Future timestamps → **high** (invalid data)
+- Varied, plausible lastmod → no finding (pass)
+
+### 2. On-Page Publication Metadata
+
+For key pages (homepage, blog posts, about), extract:
+- `<meta property="article:published_time">` or `<meta name="date">`
+- JSON-LD `datePublished` and `dateModified` properties
+- Visible date text (e.g., "Last updated: March 2026")
+
+**Check for**:
+- **Conflicts**: Sitemap lastmod says March 2026 but on-page says August 2026 (or vice versa)
+- **Stale content**: Published > 1 year ago for time-sensitive content (news, pricing, tech docs)
+- **Missing dates**: No publication or modification dates at all
+
+**Evidence format**: "Sitemap lastmod for blog post '/blog/ai-trends-2026' is '2026-01-15' but on-page datePublished is '2026-03-20' — sitemap is stale relative to actual content update"
+
+**Severity mapping**:
+- Sitemap lastmod significantly older than on-page dates → **medium** (freshness signal mismatch)
+- Time-sensitive content > 1 year stale → **medium**
+- No publication dates anywhere → **low**
+- Dates consistent and recent → no finding (pass)
+
+### 3. Content Staleness Heuristic
+
+For pages claiming to be current (news, trends, pricing):
+- Check for outdated year references (e.g., "2024" in a page title about 2026 trends)
+- Look for deprecated technology references (e.g., "IE11 support" when IE is discontinued)
+- Check if pricing or contact info matches current known values
+
+**Evidence format**: "Page titled 'AI Trends for 2026' references '2024' statistics and 'Internet Explorer compatibility' — content appears stale despite recent lastmod"
+
+**Severity**: **medium** for clearly stale content masquerading as current
+
+## Suggested Actions Reference
+
+For "Uniform sitemap lastmod":
+- **Summary**: "Implement dynamic sitemap generation that reflects actual content modification dates, not build timestamps"
+- **Priority**: medium
+- **Mechanism rationale**: "Search crawlers use lastmod to prioritize recrawl budget. When all URLs share a build timestamp, crawlers can't distinguish actually-updated pages from static ones, leading to inefficient crawl allocation. For AI systems, truthful lastmod signals which content is freshest for time-sensitive queries."
+
+For "Sitemap/on-page date mismatch":
+- **Summary**: "Sync sitemap lastmod values with on-page dateModified metadata"
+- **Priority**: medium
+- **Mechanism rationale**: "Inconsistent freshness signals across sources (sitemap vs. page metadata) reduce trust. AI systems cross-corroborate temporal signals — when they conflict, the system may discount both or serve the older version."
+```
+
+### 3.8 `engagement-friction-audit/SKILL.md`
+
+```yaml
+---
+name: engagement-friction-audit
+description: Evaluate on-site engagement signals — page performance heuristics, mobile viewport, navigation orientation, and personalization capabilities. Use when diagnosing why visitors who arrive from AI citations don't stay.
+license: Apache-2.0
+allowed-tools: Read Bash(curl:*)
+---
+
+# Engagement Friction Audit
+
+## When to Use
+Use to check if a website retains visitors once they arrive from AI assistant referrals. This addresses the "on-site engagement" half of the Round-2 problem: "why visitors who do arrive don't stay."
+
+## Inputs
+* `target_url`: URL to evaluate
+* `html_content`: Raw HTML of the page
+
+## Procedure
+
+### 1. Page Performance Heuristics (Without Browser)
+
+Estimate Core Web Vitals from static analysis:
+
+**LCP (Largest Contentful Paint) approximation**:
+- Count blocking resources: `<script>` tags without `defer` or `async`
+- Count stylesheet `<link>` tags
+- Check for large hero images without `loading="lazy"` or `fetchpriority="high"`
+- Total HTML size
+
+**Evidence format**: "Page has 14 blocking scripts (no defer/async), 6 stylesheets, and uncompressed hero image (2.3MB) — estimated LCP likely exceeds 2.5s threshold"
+
+**CLS (Cumulative Layout Shift) approximation**:
+- Check for `<img>` tags without `width` and `height` attributes
+- Check for `<video>` or `<iframe>` without dimension attributes
+- Look for web font loading patterns (`@font-face` without `font-display: optional`)
+
+**Evidence format**: "8 of 12 images lack explicit width/height attributes — likely causes layout shift during load, estimated CLS >0.1"
+
+**Severity mapping**:
+- Multiple LCP/CLS risk factors → **medium**
+- Optimized resource loading → no finding (pass)
+
+### 2. Mobile Viewport Check
+
+```bash
+grep -o '<meta name="viewport"[^>]*>' /tmp/raw.html
+```
+
+Check for:
+- `<meta name="viewport" content="width=device-width, initial-scale=1">` or similar
+- Responsive CSS media queries
+- Mobile-specific patterns
+
+**Evidence format**: "No `<meta name='viewport'>` tag found — page may not render correctly on mobile devices"
+
+**Severity**: **high** if missing viewport (site unusable on mobile), **medium** if present but with restrictive settings
+
+### 3. Navigation Orientation
+
+Check for:
+- **Breadcrumb navigation**: `<nav>` with breadcrumb structure or `BreadcrumbList` schema
+- **Logical heading structure**: (delegates to semantic-structure-audit)
+- **Clear CTA (Call-to-Action)**: Primary action button/link visible without scrolling
+- **Descriptive link text**: Links that say "Click here" vs. "View pricing plans"
+
+**Evidence format**: "No breadcrumb navigation found; primary CTA ('Get Started') is below the fold (estimated at 1,200px height)"
+
+**Severity**: **low** (orientation issues affect engagement but aren't critical failures)
+
+### 4. Personalization Signals (Failure Mode E)
+
+Check for signals that the site adapts to visitor context:
+- **Session storage**: References to `localStorage`, `sessionStorage`, cookies for returning visitors
+- **Context adaptation**: User-agent detection for mobile vs. desktop, location-based content
+- **Personalized CTAs**: Different messaging for first-time vs. returning visitors
+
+**Evidence format**: "No session persistence detected — all visitors see identical content regardless of prior visits or referral source"
+
+**Severity**: **informational** (this is a proactive improvement opportunity, not a defect)
+
+**Mechanism rationale**: "AI assistants personalize responses based on user context. Sites that retain visitor context (location, past behavior, referral source) can provide more relevant experiences, increasing engagement. This is failure mode E from the Round-2 framework."
+
+### 5. Exit Intent / Friction Points
+
+Look for common bounce-inducing patterns:
+- **Pop-up modals** on load (check for overlay dialogs, cookie banners that block content)
+- **Interstitial ads** or splash pages
+- **Auto-playing media** (video/audio that starts without user interaction)
+
+**Evidence format**: "Cookie consent modal appears immediately on page load, obscuring main content until interaction"
+
+**Severity**: **medium** for aggressive pop-ups, **low** for minor friction
+
+## Suggested Actions Reference
+
+For "Performance issues":
+- **Summary**: "Add `defer` or `async` to non-critical scripts, compress hero images, specify image dimensions"
+- **Priority**: medium
+- **Mechanism rationale**: "Slow pages increase bounce rates — visitors arriving from AI citations have high expectations and low patience. Core Web Vitals thresholds (LCP <2.5s, CLS <0.1) are established engagement predictors."
+
+For "No personalization":
+- **Summary**: "Consider adding session persistence for returning visitors (e.g., 'Welcome back' messaging, saved preferences)"
+- **Priority**: low
+- **Mechanism rationale**: "This is a proactive improvement beyond defect repair. Sites that recognize returning visitors provide more relevant experiences, increasing engagement from AI-referred traffic."
+```
+
+---
+
+## Part 4: The Report Schema (`audit-orchestrator/references/output_schema.json`)
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "BrandAIAuditReport",
+  "type": "object",
+  "required": ["site", "audited_at", "summary", "findings"],
+  "properties": {
+    "site": { "type": "string" },
+    "audited_at": { "type": "string", "format": "date-time" },
+    "summary": {
+      "type": "object",
+      "required": ["total_findings", "critical", "high", "medium"],
+      "properties": {
+        "total_findings": { "type": "integer" },
+        "critical": { "type": "integer" },
+        "high": { "type": "integer" },
+        "medium": { "type": "integer" },
+        "low": { "type": "integer" }
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "severity", "evidence", "suggested_action"],
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "severity": { "type": "string", "enum": ["critical", "high", "medium", "low"] },
+          "evidence": { "type": "string" },
+          "suggested_action": {
+            "type": "object",
+            "required": ["summary", "priority"],
+            "properties": {
+              "summary": { "type": "string" },
+              "priority": { "type": "string", "enum": ["critical", "high", "medium", "low", "informational"] },
+              "mechanism_rationale": { "type": "string" }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+---
+
+## Part 5: The README.md
+
+```markdown
+# Brand AI-Readiness Audit Marketplace
+
+## Overview
+A multi-skill marketplace that audits any website for the problems hurting both its AI discoverability (getting found and cited by AI assistants) and its on-site engagement (keeping visitors once they arrive).
+
+## Architecture
+Seven specialized skills, each owning one failure mode from the Round-2 diagnostic framework, composed by a single orchestrator entrypoint.
+
+## Skills
+
+### 1. audit-orchestrator (Entrypoint)
+**What it does**: Receives the audit request, dispatches to specialized skills, aggregates findings, and emits the final JSON report.
+**Failure modes covered**: Orchestration of all modes
+
+### 2. crawl-edge-audit
+**What it does**: Checks if AI crawlers can access the site at all — robots.txt permissions, sitemap validity, WAF/firewall blocks, llms.txt presence.
+**Failure modes covered**: A (crawler access)
+
+### 3. render-parity-audit
+**What it does**: Detects JavaScript rendering gaps — content visible to humans but invisible to static crawlers.
+**Failure modes covered**: C (machine readability — JS render gap)
+
+### 4. semantic-structure-audit
+**What it does**: Evaluates content structure for machine extractability — heading hierarchy, BLUF placement, semantic tables, text alternatives.
+**Failure modes covered**: C (machine readability — structure)
+
+### 5. entity-graph-audit
+**What it does**: Validates structured data for entity disambiguation — Organization schema, sameAs authority links, @graph connectivity.
+**Failure modes covered**: D (entity disambiguation)
+
+### 6. freshness-corroboration-audit
+**What it does**: Checks temporal accuracy — sitemap lastmod truthfulness, on-page publication dates, stale content.
+**Failure modes covered**: D (stale facts)
+
+### 7. engagement-friction-audit
+**What it does**: Evaluates on-site engagement — performance heuristics, mobile viewport, navigation orientation, personalization signals.
+**Failure modes covered**: E (personalization) + engagement
+
+## How the Entrypoint Composes Them
+
+The `audit-orchestrator` skill:
+1. Verifies network connectivity to the target URL
+2. Sequentially invokes each specialized skill, passing the target URL
+3. Each skill returns JSON findings with evidence and severity
+4. The orchestrator aggregates, deduplicates, and normalizes findings
+5. Validates the final report against the required schema
+6. Emits the structured JSON audit report
+
+## Usage
+
+Invoke the `audit-orchestrator` skill with a URL:
+```
+Audit https://example.com for AI discoverability and engagement problems
+```
+
+The marketplace will produce a JSON report with:
+- Summary statistics (total findings, counts by severity)
+- Detailed findings (each with evidence and severity)
+- Suggested actions (each with priority and mechanism rationale)
+
+## Safety
+- **Recommend-only**: No skill modifies the target website
+- **Read-only**: All operations are fetch-and-analyze
+- **robots.txt respected**: Crawling respects Disallow rules
+- **Rate-limited**: Probes are spaced to avoid rate-abuse
+- **No authentication**: Only public pages are audited
+```
+
+---
+
+## Part 6: Build & Test Checklist
+
+### Week 1: Write the Skills
+- [ ] Write `marketplace.json` manifest
+- [ ] Write `audit-orchestrator/SKILL.md` (entrypoint)
+- [ ] Write 6 specialized SKILL.md files
+- [ ] Write `references/output_schema.json`
+- [ ] Write `README.md`
+
+### Week 2: Test on Real Sites
+- [ ] Test on 3-5 diverse sites (documentation site, e-commerce, SaaS landing page, blog, local business)
+- [ ] Verify each skill detects the right problems
+- [ ] Check for false positives (flagging things that aren't actually problems)
+- [ ] Ensure the report is valid JSON per the schema
+- [ ] Verify runtime < 5 minutes
+
+### Week 3: Polish & Submit
+- [ ] Run `skills-ref validate` on each skill folder (if Python/npm available)
+- [ ] Verify all SKILL.md files have valid frontmatter (name, description)
+- [ ] Ensure the manifest is well-formed with exactly one entrypoint
+- [ ] Check zip size < 50MB
+- [ ] Final review against the rubric:
+  - [ ] Detection accuracy: Does each skill check real problems with evidence?
+  - [ ] Suggested-action quality: Are fixes mechanism-sound and prioritized?
+  - [ ] Output design: Is the report clear and actionable?
+  - [ ] Skill-format hygiene: Is every SKILL.md compliant?
+  - [ ] Marketplace composition: Is the decomposition genuine?
+  - [ ] Generalization: Do the checks work on unseen sites?
+
+---
+
+## Part 7: The Winning Mindset
+
+**The judges aren't testing whether you can build a web scraper. They're testing whether you can encode diagnostic reasoning into reusable instructions.**
+
+When they open your `crawl-edge-audit/SKILL.md`, they should read a procedure that says: "First check robots.txt for these specific AI bot user-agents, because these are the crawlers that AI assistants use for real-time retrieval. If they're blocked, that's critical because..." — not a Python script.
+
+When they open your `entity-graph-audit/SKILL.md`, they should read: "Check for sameAs properties because AI systems treat facts as more trustworthy when multiple independent sources agree. Without sameAs links, your brand is an isolated node with no cross-web corroboration..." — not a JSON parser.
+
+**The intelligence is in the reasoning, encoded as instructions. The agent executes the reasoning. The report is the output.**
+
+This is what "encode that reasoning into reusable agent skills" means — and this is what wins.

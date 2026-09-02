@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.venv/
+audit/
+research/field-study/*.tmp
+.DS_Store

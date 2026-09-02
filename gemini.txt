@@ -1,0 +1,265 @@
+To win Round 3 of the Adobe University Hackathon, the submission must bridge deep retrieval engineering mechanics with strict `agentskills.io` runtime compliance. Evaluators judge whether the marketplace surfaces root causes on unseen websites without false positives, produces mechanism-sound remedies, and executes deterministically under 5 minutes without destructive actions.
+
+---
+
+### Marketplace Architecture and Separation of Concerns
+
+A single monolithic skill causes context saturation and non-deterministic agent wandering, while an over-fragmented marketplace (15+ skills) creates execution latency and padding penalties. The optimal balance is a **hub-and-spoke topology**: a single entrypoint orchestrator coordinating seven dedicated audit skills, each handling one isolated retrieval or user retention vector.
+
+```text
+brand-ai-readiness-audit/
+├── marketplace.json                        # Marketplace Manifest designating entrypoint
+├── README.md                               # Architecture overview, execution commands
+└── skills/
+    ├── audit-orchestrator/                 # [Entrypoint Skill]
+    │   ├── SKILL.md                        # Master workflow, severity normalization
+    │   ├── scripts/
+    │   │   └── aggregate_reports.py        # Validates JSON against schema, aggregates findings
+    │   └── references/
+    │       └── output_schema.json          # Enforced JSON Schema for audit reports
+    ├── crawl-edge-audit/                   # Perimeter Accessibility & Protocols
+    │   ├── SKILL.md
+    │   ├── scripts/check_edge_access.py    # Multi-UA probes, robots.txt, sitemaps, llms.txt
+    │   └── references/bot_user_agents.json # Crawler UA registry
+    ├── render-parity-audit/                # Client vs. Server Rendering Parity
+    │   ├── SKILL.md
+    │   └── scripts/diff_render.py          # Raw GET vs. headless DOM token divergence
+    ├── semantic-chunking-audit/            # RAG Passage Retrieval & BLUF Formatting
+    │   ├── SKILL.md
+    │   └── scripts/evaluate_bluf.py        # Heading tree hierarchy and BLUF 60-word validator
+    ├── entity-graph-audit/                 # Knowledge Graph & Entity Disambiguation
+    │   ├── SKILL.md
+    │   └── scripts/validate_jsonld.py      # Schema.org @graph and Wikidata sameAs verification
+    ├── freshness-corroboration-audit/      # Temporal Consistency & Recrawl Trust
+    │   ├── SKILL.md
+    │   └── scripts/check_freshness.py      # Sitemap <lastmod> vs. on-page publication dates
+    ├── security-integrity-audit/           # AI Trust & Prompt Injection Defense
+    │   ├── SKILL.md
+    │   └── scripts/scan_injections.py      # Hidden DOM text, adversarial comment scan
+    └── engagement-friction-audit/          # On-Site Experience & Core Web Vitals
+        ├── SKILL.md
+        └── scripts/measure_vitals.py       # CLS, LCP heuristics, mobile viewport responsiveness
+
+```
+
+---
+
+### Three-Tier Progressive Disclosure Lifecycle
+
+To guarantee fast execution and zero agent hallucinations, implement the standard `agentskills.io` progressive disclosure model:
+
+* **Tier 1: Metadata Discovery (~100 tokens per skill)**
+The orchestrator runtime ingests only `name` and `description` from the YAML frontmatter of each sub-skill. Descriptions must specify exact triggering conditions (e.g., *"Use when evaluating whether raw server responses hide client-side JS content"*).
+
+
+* **Tier 2: Activation (< 5,000 tokens)**
+When the orchestrator invokes a sub-skill, only that sub-skill's `SKILL.md` body is loaded. It provides step-by-step procedures and declares tool permissions (`allowed-tools: Bash(python3:*) Read`).
+
+
+* **Tier 3: Execution (Deterministic Sandboxed Scripts)**
+Heavy computational tasks (network sockets, DOM tree traversal, regex matching) are offloaded to Python scripts within each skill's `scripts/` directory. The LLM only interprets the structured JSON returned by the scripts, eliminating reasoning drift.
+
+---
+
+### Audit Engine Matrix: Diagnostic Signals and Verification Logic
+
+Each sub-skill must target a concrete algorithmic failure mode identified in modern retrieval engines and human retention patterns:
+
+| Sub-Skill | Targeted Diagnostic Vector | Deterministic Test & Threshold | Finding Evidence Metric |
+| --- | --- | --- | --- |
+| **crawl-edge-audit** | WAF & Edge Ingestion | Probing endpoints using `GPTBot`, `ClaudeBot`, `PerplexityBot`, and `OAI-SearchBot`. | HTTP 401/403 or presence of `cf-mitigated: challenge` headers. |
+| **render-parity-audit** | JS Hydration Gap | Comparing raw `GET` HTTP payload against parsed headless DOM text. | Ratio of raw visible text to rendered text $< 0.40$. |
+| **semantic-chunking-audit** | Vector Chunk Context | Verifying heading hierarchy (`H1` $\to$ `H2` $\to$ `H3`) and Bottom Line Up Front (BLUF) answer placement. | First factual sentence appears $> 60$ words below section header; skipped heading levels. |
+| **entity-graph-audit** | Entity Disambiguation | Parsing JSON-LD for `@graph` connectivity and `sameAs` authorities. | Isolated schema blocks; absence of Wikidata/Wikipedia `sameAs` URIs. |
+| **freshness-corroboration-audit** | Recrawl Trust Degradation | Cross-referencing `sitemap.xml` `<lastmod>` against on-page `dateModified`/`datePublished`. | Static/uniform timestamps across distinct pages; date conflicts $> 90$ days. |
+| **security-integrity-audit** | Indirect Prompt Injection (IPI) | Scanning DOM for CSS concealment (`left: -9999px`, `font-size: 0px`) and adversarial phrases. | Detection of prompt injection patterns (e.g., *"ignore previous instructions"*). |
+| **engagement-friction-audit** | Human Bounce Hazards | Inspecting image dimensions, font display swapping, and viewport meta tags. | Estimated Cumulative Layout Shift (CLS) $> 0.1$; un-dimensioned hero elements. |
+
+---
+
+### Proactive "Beyond-Defect" Recommendations
+
+The rubric specifically rewards recommendations that proactively strengthen discoverability and retention even if a site has no broken links or syntax errors. Every audit should evaluate and suggest four strategic differentiators:
+
+* **Token-Efficient Content Negotiation (Markdown Endpoint)**
+* *Mechanism:* Raw HTML contains massive boilerplate (averaging 38,000+ tokens per page), consuming agent context windows. Markdown conversion reduces this to ~2,700 tokens (a 94% reduction).
+* *Recommendation:* Configure edge workers (Cloudflare/Fastly) to detect `Accept: text/markdown` or agent User-Agents and return clean Markdown representations of the page content.
+
+
+* **Bing IndexNow Automated Gateway Integration**
+* *Mechanism:* ChatGPT Search and Copilot rely heavily on Bing's index. Standard crawlers experience discovery latencies of days or weeks.
+* *Recommendation:* Integrate real-time API triggers to push URL changes to `api.indexnow.org` on publish, cutting indexing latency to under an hour.
+
+
+* **Deep Knowledge Graph Interlinking (`@graph`)**
+* *Mechanism:* LLMs perform entity extraction using knowledge graph triples. Standalone schemas require heuristic reconciliation.
+* *Recommendation:* Unify schemas into a single nested `@graph` linking `Organization` $\to$ `SoftwareApplication`/`Product` $\to$ `Offer`, anchored by Wikidata QIDs.
+
+
+* **BLUF-Compliant Technical Information Architecture**
+* *Mechanism:* Embedding models use chunk windows of 256–512 tokens. Narrative preambles dilute vector density.
+* *Recommendation:* Format technical documentation so every section begins with a 30–60 word declarative summary containing numerical data and primary references.
+
+
+
+---
+
+### Implementation Blueprint
+
+**1. Marketplace Manifest (`marketplace.json`)**
+The root manifest must mark the entrypoint cleanly:
+
+```json
+{
+  "name": "brand-ai-readiness-audit",
+  "version": "1.0.0",
+  "description": "Deterministic multi-skill marketplace for AI discoverability and user retention auditing.",
+  "skills": [
+    {
+      "id": "audit-orchestrator",
+      "path": "skills/audit-orchestrator",
+      "entrypoint": true
+    },
+    {
+      "id": "crawl-edge-audit",
+      "path": "skills/crawl-edge-audit"
+    },
+    {
+      "id": "render-parity-audit",
+      "path": "skills/render-parity-audit"
+    },
+    {
+      "id": "semantic-chunking-audit",
+      "path": "skills/semantic-chunking-audit"
+    },
+    {
+      "id": "entity-graph-audit",
+      "path": "skills/entity-graph-audit"
+    },
+    {
+      "id": "freshness-corroboration-audit",
+      "path": "skills/freshness-corroboration-audit"
+    },
+    {
+      "id": "security-integrity-audit",
+      "path": "skills/security-integrity-audit"
+    },
+    {
+      "id": "engagement-friction-audit",
+      "path": "skills/engagement-friction-audit"
+    }
+  ]
+}
+
+```
+
+**2. Orchestrator Frontmatter (`skills/audit-orchestrator/SKILL.md`)**
+Frontmatter must satisfy the `agentskills.io` regex (`^[a-z0-9]+(-[a-z0-9]+)*$`) and keep description under 1,024 characters:
+
+```yaml
+---
+name: audit-orchestrator
+description: Coordinate and execute a deterministic brand AI-readiness and on-site retention audit for any web domain. Detects why a brand is missing from AI search citations or experiencing visitor bounce, producing a validated JSON report.
+license: Apache-2.0
+metadata:
+  version: "1.0.0"
+  author: "Adobe-Hackathon-Team"
+allowed-tools: Bash(python3:*) Bash(curl:*) Read
+---
+
+# Brand AI-Readiness Audit Orchestrator
+
+## When to Use
+Invoke this skill to diagnose why a website is omitted from generative AI search results (ChatGPT, Claude, Perplexity), fails chunk extraction in coding harnesses, or suffers high human bounce rates.
+
+## Inputs
+* `url`: A valid HTTP or HTTPS domain string.
+
+## Procedure
+1. Execute connectivity pre-flight: `curl -I -s --max-time 10 {url}`.
+2. Sequentially execute sub-skills:
+   - Run `crawl-edge-audit` (`check_edge_access.py`)
+   - Run `render-parity-audit` (`diff_render.py`)
+   - Run `semantic-chunking-audit` (`evaluate_bluf.py`)
+   - Run `entity-graph-audit` (`validate_jsonld.py`)
+   - Run `freshness-corroboration-audit` (`check_freshness.py`)
+   - Run `security-integrity-audit` (`scan_injections.py`)
+   - Run `engagement-friction-audit` (`measure_vitals.py`)
+3. Compile all sub-skill JSON payloads via `python3 scripts/aggregate_reports.py`.
+4. Validate aggregated report against `references/output_schema.json` and emit the final payload.
+
+## Output
+A validated JSON report conforming to the required schema with total findings, severity breakdowns, and actionable recommendations.
+
+```
+
+**3. Enforced Output Schema Conformance**
+The report must adhere strictly to the required hackathon JSON format:
+
+```json
+{
+  "site": "target-site.com",
+  "audited_at": "2026-09-20T14:32:00Z",
+  "summary": {
+    "total_findings": 5,
+    "critical": 1,
+    "high": 2,
+    "medium": 2
+  },
+  "findings": [
+    {
+      "id": "F-001",
+      "title": "Cloudflare WAF Blocks AI Retrieval Agents with HTTP 403",
+      "severity": "critical",
+      "evidence": "Simulated probes returned HTTP 403 to GPTBot/1.2 and ClaudeBot/1.0. cf-mitigated header was present.",
+      "suggested_action": {
+        "summary": "Configure Cloudflare WAF Custom Rules to allow verified AI crawler User-Agents and IP ranges.",
+        "priority": "critical",
+        "mechanism_rationale": "Edge blocks prevent AI engines from indexing raw content, causing complete brand omission in live retrieval queries."
+      }
+    }
+  ]
+}
+
+```
+
+---
+
+### Step-by-Step Execution Plan for the Hackathon
+
+* **Phase 1: Environment & Core Scripts Setup**
+* Build the seven Python scripts using standard library modules (`urllib`, `html.parser`, `re`, `json`). Avoid heavy external dependencies (such as Chromium, Playwright, or large ML packages) to ensure sub-minute runtimes and zip sizes well under 50 MB.
+
+
+
+
+* **Phase 2: Sub-Skill Markdown Authoring**
+* Write clean `SKILL.md` files for each sub-skill. Keep instructions under 500 lines, delegating lookup tables to `references/`. Validate folder names and YAML frontmatter against the `agentskills.io` standard.
+
+
+
+
+* **Phase 3: Aggregator and Schema Enforcement**
+* Build `aggregate_reports.py` in the entrypoint skill to automatically collect JSON outputs, assign incremental IDs (`F-001`, `F-002`), compute summary counts, and validate against `output_schema.json`.
+
+
+
+
+* **Phase 4: Stress-Testing on Wild Target Archetypes**
+* Test the orchestrator against four distinct site architectures:
+* *Static Site Generator (SSG):* Minimalist documentation site (expected: clean pass or minor schema warnings).
+* *Client-Rendered SPA:* React/Angular dashboard (expected: severe render parity flags).
+* *WAF-Protected SaaS:* Cloudflare-fronted enterprise site (expected: bot block findings).
+* *Ad-Heavy Content Site:* News/blog portal (expected: high CLS and narrative chunking flags).
+
+
+
+
+* **Phase 5: Packaging & Submission**
+* Confirm that runtime across all tests is $< 5$ minutes.
+
+
+* Write the root `README.md` clearly documenting the architecture, separation of concerns, and usage.
+
+
+* Zip the directory root (`brand-ai-readiness-audit.zip`) and verify file size is $< 50\text{ MB}$.

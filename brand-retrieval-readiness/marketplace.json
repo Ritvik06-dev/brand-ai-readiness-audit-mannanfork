@@ -1,0 +1,14 @@
+{
+  "name": "brand-retrieval-readiness",
+  "version": "1.0.0",
+  "description": "Evidence-driven audit of a website's AI-retrieval readiness: discoverability by AI assistants and engagement for visitors they refer.",
+  "skills": [
+    { "id": "audit-orchestrator", "path": "skills/audit-orchestrator", "entrypoint": true },
+    { "id": "access-discovery-audit", "path": "skills/access-discovery-audit" },
+    { "id": "representation-parity-audit", "path": "skills/representation-parity-audit" },
+    { "id": "answerability-audit", "path": "skills/answerability-audit" },
+    { "id": "entity-consistency-audit", "path": "skills/entity-consistency-audit" },
+    { "id": "freshness-consistency-audit", "path": "skills/freshness-consistency-audit" },
+    { "id": "referral-experience-audit", "path": "skills/referral-experience-audit" }
+  ]
+}
