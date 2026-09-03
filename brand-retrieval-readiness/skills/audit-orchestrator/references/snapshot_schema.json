@@ -61,6 +61,37 @@
         "clusters": { "type": "array", "items": { "type": "object", "required": ["pattern", "count"], "additionalProperties": false, "properties": { "pattern": { "type": "string" }, "count": { "type": "integer" } } }, "description": "path-pattern cluster -> count, so 100 near-identical product URLs don't consume the budget" }
       }
     },
+    "sitemap": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "url": { "type": "string" },
+        "http_status": { "type": ["integer", "null"] },
+        "parse_ok": { "type": ["boolean", "null"] },
+        "entries_count": { "type": ["integer", "null"] },
+        "lastmod_present_count": { "type": ["integer", "null"] },
+        "lastmod_distinct_count": { "type": ["integer", "null"], "description": "uniform build-stamp lastmod shows as 1" },
+        "lastmod_sample": { "type": "array", "maxItems": 20, "items": { "type": "object", "required": ["url", "lastmod"], "additionalProperties": false, "properties": { "url": { "type": "string" }, "lastmod": { "type": "string" } } } }
+      }
+    },
+    "external_presence": {
+      "type": "array",
+      "maxItems": 24,
+      "description": "declared sameAs / footer links resolved by the collector - the only network I/O outside discovery (PHASE1_REVIEW 3.3); timeouts never become findings",
+      "items": {
+        "type": "object",
+        "required": ["url", "declared_in"],
+        "additionalProperties": false,
+        "properties": {
+          "url": { "type": "string" },
+          "declared_in": { "type": "string", "description": "e.g. 'jsonld sameAs (/about)', 'footer'" },
+          "http_status": { "type": ["integer", "null"] },
+          "owned_vs_independent": { "enum": ["owned", "independent", "unknown"], "description": "collector heuristic; the entity skill's model judgment refines it" },
+          "brand_name_match": { "type": ["boolean", "null"], "description": "brand name observed in the destination's title, when fetched" },
+          "heuristic": { "type": ["string", "null"], "description": "why the classifier chose this value" }
+        }
+      }
+    },
     "pages": {
       "type": "array",
       "maxItems": 8,
@@ -82,9 +113,24 @@
           "meta_description": { "type": ["string", "null"] },
           "canonical": { "type": ["string", "null"] },
           "lang": { "type": ["string", "null"] },
-          "hreflang": { "type": "array", "items": { "type": "string" } },
+          "hreflang": { "type": "array", "items": { "type": "object", "required": ["lang", "href"], "additionalProperties": false, "properties": { "lang": { "type": "string" }, "href": { "type": "string" } } } },
           "robots_meta": { "type": ["string", "null"] },
           "x_robots_tag": { "type": ["string", "null"] },
+          "headers": {
+            "type": "object",
+            "description": "allow-listed response headers (PHASE1_REVIEW 3.2)",
+            "additionalProperties": false,
+            "properties": {
+              "server": { "type": ["string", "null"] },
+              "cf_ray": { "type": ["string", "null"] },
+              "cf_mitigated": { "type": ["string", "null"] },
+              "last_modified": { "type": ["string", "null"] },
+              "cache_control": { "type": ["string", "null"] },
+              "content_language": { "type": ["string", "null"] },
+              "link": { "type": ["string", "null"] }
+            }
+          },
+          "sitemap_lastmod": { "type": ["string", "null"], "description": "lastmod for this URL from the sitemap, when the URL appears there" },
           "headings": { "type": "array", "items": { "type": "object", "required": ["level", "text"], "additionalProperties": false, "properties": { "level": { "type": "integer" }, "text": { "type": "string" }, "id": { "type": ["string", "null"] } } } },
           "links": { "type": "array", "items": { "type": "object", "required": ["href"], "additionalProperties": false, "properties": { "href": { "type": "string" }, "anchor_text": { "type": ["string", "null"] }, "rel": { "type": ["string", "null"] } } } },
           "jsonld": {
@@ -124,7 +170,7 @@
               "required": ["type", "value", "quote"],
               "additionalProperties": false,
               "properties": {
-                "type": { "enum": ["price", "date", "count", "plan", "version", "hours"] },
+                "type": { "enum": ["price", "date", "count", "plan", "version", "hours", "phone", "address"] },
                 "value": { "type": "string" },
                 "quote": { "type": "string" },
                 "location": { "type": "string" }
@@ -176,23 +222,17 @@
               "robots_allows": { "type": ["boolean", "null"], "description": "false => probe skipped, the rule itself is the finding" },
               "status": { "type": ["integer", "null"] },
               "content_type": { "type": ["string", "null"] },
+              "headers": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "server": { "type": ["string", "null"] },
+                  "cf_ray": { "type": ["string", "null"] },
+                  "cf_mitigated": { "type": ["string", "null"] }
+                }
+              },
               "cf_mitigated": { "type": ["boolean", "null"] },
               "differential": { "type": ["string", "null"], "description": "e.g. 'browser 200 / bot-UA 403' - suspected edge discrimination, medium confidence cap" }
-            }
-          }
-        },
-        "fragment_contiguity": {
-          "type": "array",
-          "description": "populated post-answerability by collect_snapshot.py --passages: does each candidate answer exist as one contiguous visible text-node run in raw HTML? (text-fragment landing survivability)",
-          "items": {
-            "type": "object",
-            "required": ["question_id", "page_url", "contiguous"],
-            "additionalProperties": false,
-            "properties": {
-              "question_id": { "type": "string" },
-              "page_url": { "type": "string" },
-              "contiguous": { "type": "boolean" },
-              "quote": { "type": ["string", "null"] }
             }
           }
         }

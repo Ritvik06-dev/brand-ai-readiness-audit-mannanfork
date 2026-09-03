@@ -58,14 +58,17 @@
             "confidence": { "$ref": "#/definitions/confidence" },
             "evidence": { "type": "string", "minLength": 1 },
             "why_it_matters": { "type": "string" },
-            "affected_surfaces": { "type": "array", "items": { "type": "string" } },
+            "affected_surfaces": { "type": "array", "items": { "enum": ["google_ai_overviews_ai_mode", "bing_copilot", "chatgpt_search", "perplexity_retrieval", "claude_search", "chatgpt_live_fetch", "claude_live_fetch", "perplexity_live_fetch"] }, "description": "citation + live-fetch surfaces only (see provider_registry.json surface_taxonomy); training surfaces are evidence, never an affected surface" },
             "suggested_action": {
               "type": "object",
               "required": ["summary", "priority"],
               "additionalProperties": false,
               "properties": {
                 "summary": { "type": "string" },
-                "priority": { "enum": ["critical", "high", "medium", "low"] }
+                "priority": { "enum": ["critical", "high", "medium", "low"] },
+                "effort": { "enum": ["small", "medium", "large"] },
+                "owner": { "type": "string" },
+                "acceptance_test": { "type": "string", "description": "site-specific test proving the fix; the specialist writes it here - build_report.py fills from the playbook only when absent" }
               }
             }
           }

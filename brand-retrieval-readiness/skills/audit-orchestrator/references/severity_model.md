@@ -50,7 +50,9 @@ lists in the remediation; never fetch them at runtime).
    policy choice, not a visibility outage — `low` at most, framed as policy, never as a
    citation-loss finding.
 6. `robots.txt` returning **404** means "no crawl restrictions" — not a defect. A **5xx** on
-   robots.txt is a real crawl-delays condition — evidence-backed finding.
+   robots.txt is a real crawl-delay condition: **two or more consecutive 5xx across the audit →
+   `high` severity / `high` confidence**; a single occurrence → `needs_verification`, never a
+   finding (PHASE1_REVIEW §4.3). The collector records every attempt; the access gate reads the count.
 7. Root causes over symptoms: correlated observations that share one mechanism (e.g., empty
    shell + raw pricing absent + nav-only extraction = **one** finding) are merged by the
    orchestrator; downstream effects become `affected_urls`/`affected_surfaces`, not separate

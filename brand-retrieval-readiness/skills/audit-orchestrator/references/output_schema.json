@@ -4,10 +4,12 @@
   "title": "Brand Retrieval Readiness - Final Audit Report",
   "description": "Emitted by audit-orchestrator via build_report.py. PS floor fields plus extensions. Arithmetic invariants (counts == array lengths, opportunities never counted as findings, severity-then-id sort) are enforced by build_report.py, not by this schema.",
   "type": "object",
-  "required": ["site", "audited_at", "audit_status", "summary", "findings"],
+  "required": ["site", "audited_at", "audit_status", "report_schema_version", "summary", "findings"],
   "additionalProperties": false,
   "properties": {
     "site": { "type": "string", "description": "The audited host, e.g. example.com" },
+    "report_schema_version": { "const": "1.0", "description": "Version of output_schema.json this report was built against" },
+    "marketplace_version": { "type": "string", "description": " marketplace.json version" },
     "audited_at": { "type": "string", "format": "date-time" },
     "audit_status": { "enum": ["complete", "partial"], "description": "partial = deadline hit or capabilities unavailable; a valid partial report always beats an overrun" },
     "coverage": {
@@ -75,7 +77,7 @@
         "required": ["check_id", "reason"],
         "additionalProperties": false,
         "properties": {
-          "check_id": { "type": "string" },
+          "check_id": { "type": "string", "pattern": "^[A-Z]{3}(-[A-Z0-9]+)+$" },
           "reason": { "type": "string" }
         }
       }
@@ -104,7 +106,7 @@
         "severity": { "$ref": "#/definitions/severity" },
         "confidence": { "$ref": "#/definitions/confidence" },
         "affected_urls": { "type": "array", "items": { "type": "string" } },
-        "affected_surfaces": { "type": "array", "items": { "type": "string" }, "description": "retrieval surfaces actually affected; inherits render_evidence from provider_registry.json" },
+        "affected_surfaces": { "type": "array", "items": { "enum": ["google_ai_overviews_ai_mode", "bing_copilot", "chatgpt_search", "perplexity_retrieval", "claude_search", "chatgpt_live_fetch", "claude_live_fetch", "perplexity_live_fetch"] }, "description": "citation + live-fetch surfaces only (see provider_registry.json surface_taxonomy); inherits render_evidence from provider_registry.json" },
         "evidence": { "type": "string", "minLength": 1, "description": "exact URL/path + observation + method; quotes where semantic" },
         "why_it_matters": { "type": "string", "description": "the mechanism, stated without overclaiming" },
         "suggested_action": {

@@ -1,0 +1,130 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "excerpts_schema.json",
+  "title": "Judgment-skill I/O: excerpt files, passages, passages_checked",
+  "description": "Three file shapes discriminated by 'kind'. (1) Excerpt files audit/excerpts/<skill>.json are each judgment specialist's single prepared input - one read, one judgment, one write, <=3 tool calls (SECOND_REVIEW 2.5); excerpts are bounded (<=1,500 chars per candidate location), never whole pages. (2) audit/passages.json is answerability's output mapping generated questions to candidate answer passages. (3) audit/passages_checked.json is collect_snapshot.py --passages output: deterministic text-node contiguity per candidate passage (text-fragment landing survivability), read by referral-experience. NOTE for build_report.py's vendored validator: this schema uses oneOf and is dev-oracle-only; the runtime-validated schemas (output, fragment, snapshot) do not.",
+  "oneOf": [
+    { "$ref": "#/definitions/excerpt_file" },
+    { "$ref": "#/definitions/passages_file" },
+    { "$ref": "#/definitions/passages_checked_file" }
+  ],
+  "definitions": {
+    "excerpt_file": {
+      "type": "object",
+      "required": ["kind", "skill_id", "budget_chars", "pages"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "excerpt" },
+        "skill_id": { "enum": ["answerability-audit", "freshness-consistency-audit", "referral-experience-audit"] },
+        "budget_chars": { "type": "integer", "minimum": 1, "description": "total excerpt budget for this skill's input file" },
+        "generated_at": { "type": "string", "format": "date-time" },
+        "pages": { "type": "array", "maxItems": 8, "items": { "$ref": "#/definitions/excerpt_page" } },
+        "extras": {
+          "type": "object",
+          "description": "per-skill additions: referral-experience <- probes subset (soft_404, redirect_path_preservation) plus the passages_checked results; freshness-consistency <- sitemap lastmod summary + claim_index across pages; answerability <- nothing extra",
+          "additionalProperties": true
+        }
+      }
+    },
+    "excerpt_page": {
+      "type": "object",
+      "required": ["url", "title", "heading_tree", "main_content_excerpts"],
+      "additionalProperties": false,
+      "properties": {
+        "url": { "type": "string" },
+        "title": { "type": ["string", "null"] },
+        "heading_tree": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["level", "text"],
+            "additionalProperties": false,
+            "properties": {
+              "level": { "type": "integer" },
+              "text": { "type": "string" },
+              "id": { "type": ["string", "null"], "description": "stable heading ids matter for the referral fragment/anchor checks" }
+            }
+          }
+        },
+        "main_content_excerpts": {
+          "type": "array",
+          "description": "candidate answer locations only - never the whole page",
+          "items": {
+            "type": "object",
+            "required": ["char_offset", "text"],
+            "additionalProperties": false,
+            "properties": {
+              "char_offset": { "type": "integer", "description": "offset into the page's visible_text, for evidence citation" },
+              "text": { "type": "string", "maxLength": 1500 },
+              "location": { "type": ["string", "null"], "description": "e.g. 'under h2 Pricing'" }
+            }
+          }
+        },
+        "claim_index_subset": {
+          "type": "array",
+          "description": "claims from this page relevant to the target skill",
+          "items": {
+            "type": "object",
+            "required": ["type", "value", "quote"],
+            "additionalProperties": false,
+            "properties": {
+              "type": { "type": "string" },
+              "value": { "type": "string" },
+              "quote": { "type": "string" },
+              "location": { "type": ["string", "null"] }
+            }
+          }
+        }
+      }
+    },
+    "passages_file": {
+      "type": "object",
+      "required": ["kind", "skill_id", "questions"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "passages" },
+        "skill_id": { "const": "answerability-audit" },
+        "generated_at": { "type": "string", "format": "date-time" },
+        "questions": { "type": "array", "minItems": 1, "items": { "$ref": "#/definitions/question" } }
+      }
+    },
+    "question": {
+      "type": "object",
+      "required": ["question_id", "question", "expected_page", "candidate_passage"],
+      "additionalProperties": false,
+      "properties": {
+        "question_id": { "type": "string", "pattern": "^Q-[0-9]{3}$" },
+        "question": { "type": "string" },
+        "intent": { "enum": ["identity", "capability", "transaction", "procedure", "temporal", "comparison", "trust", "local"] },
+        "expected_page": { "type": "string", "description": "the page that should answer this question" },
+        "candidate_passage": { "type": "string", "maxLength": 2000, "description": "verbatim from the page" },
+        "qualifier_present": { "type": "boolean", "description": "does the passage carry its own qualifications/exceptions?" },
+        "source_location": { "type": ["string", "null"], "description": "heading path / char offset for evidence" }
+      }
+    },
+    "passages_checked_file": {
+      "type": "object",
+      "required": ["kind", "results"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "passages_checked" },
+        "generated_at": { "type": "string", "format": "date-time" },
+        "results": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["question_id", "page_url", "contiguous"],
+            "additionalProperties": false,
+            "properties": {
+              "question_id": { "type": "string" },
+              "page_url": { "type": "string" },
+              "contiguous": { "type": "boolean", "description": "candidate_passage exists as one contiguous visible text-node run in the page's raw HTML" },
+              "quote": { "type": ["string", "null"] },
+              "note": { "type": ["string", "null"], "description": "e.g. 'price split across three spans', 'inside collapsed details'" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

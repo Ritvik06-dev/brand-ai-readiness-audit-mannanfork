@@ -1,0 +1,72 @@
+{
+  "skill_id": "access-discovery-audit",
+  "mode": "snapshot",
+  "generated_at": "2026-09-03T12:00:00Z",
+  "results": [
+    {
+      "check_id": "ACC-ROBOTS-ROLE",
+      "gate": "finding",
+      "urls": ["https://example.com/pricing"],
+      "observations": {
+        "token": "OAI-SearchBot",
+        "robots_allows_home": false,
+        "browser_ua_status": 200,
+        "matching_rule": "User-agent: OAI-SearchBot / Disallow: /pricing"
+      },
+      "evidence_quality": "direct-measurement",
+      "candidate_finding": {
+        "title": "OAI-SearchBot is disallowed on the pricing page",
+        "severity": "high",
+        "confidence": "high",
+        "evidence": "https://example.com/pricing: robots.txt contains 'User-agent: OAI-SearchBot' with 'Disallow: /pricing'; the same path returns 200 to a browser-UA fetch from the auditor's IP.",
+        "why_it_matters": "OpenAI documents that sites disallowing OAI-SearchBot 'will not be shown in ChatGPT search answers, though can still appear as navigational links.'",
+        "affected_surfaces": ["chatgpt_search"],
+        "suggested_action": {
+          "summary": "Allow OAI-SearchBot on public decision pages; keep any training-bot (GPTBot) policy unchanged if that restriction is intentional.",
+          "priority": "high",
+          "effort": "small",
+          "owner": "web-platform",
+          "acceptance_test": "After the change, no robots.txt rule for OAI-SearchBot matches /pricing, and a fetch with that User-Agent returns 200."
+        }
+      }
+    },
+    {
+      "check_id": "ACC-CANONICAL-CONFLICT",
+      "gate": "pass",
+      "urls": ["https://example.com/pricing"],
+      "observations": {
+        "canonical": "https://example.com/pricing",
+        "redirect_chain_final": "https://example.com/pricing",
+        "agree": true
+      },
+      "evidence_quality": "direct-measurement"
+    },
+    {
+      "check_id": "ACC-ROBOTS-UNAVAILABLE",
+      "gate": "finding",
+      "urls": ["https://example.com/robots.txt"],
+      "observations": {
+        "attempts": 1,
+        "http_status": 503,
+        "consecutive_5xx": 1
+      },
+      "evidence_quality": "hypothesis",
+      "candidate_finding": {
+        "title": "robots.txt returned 503 on the single audit attempt",
+        "severity": "medium",
+        "confidence": "low",
+        "evidence": "https://example.com/robots.txt returned 503 on one attempt during the audit; a single occurrence is inconclusive (severity_model rule 6).",
+        "suggested_action": {
+          "summary": "Confirm robots.txt availability over time; a single 5xx may be transient.",
+          "priority": "low"
+        }
+      }
+    }
+  ],
+  "not_evaluated": [
+    {
+      "check_id": "ACC-HREFLANG-INCONSISTENT",
+      "reason": "single-locale site; hreflang alternates not applicable"
+    }
+  ]
+}

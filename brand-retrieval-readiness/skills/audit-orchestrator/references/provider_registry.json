@@ -46,7 +46,7 @@
       "verified_in": "SECOND_REVIEW.md section 2.2"
     },
     {
-      "surface": "claude_retrieval",
+      "surface": "claude_training",
       "renders_js": false,
       "confidence": "high",
       "evidence": "ClaudeBot fetches JS assets in ~23.8% of hits and executes none.",
@@ -61,8 +61,38 @@
       "evidence": "No first-party or strong third-party evidence documents whether Claude-SearchBot renders. Treat render-gap findings for this surface as medium confidence.",
       "source": "https://support.claude.com/en/articles/8896518-does-anthropic-crawl-data-from-the-web-and-how-can-site-owners-block-the-crawler",
       "verified_in": "SECOND_REVIEW.md section 2.2"
+    },
+    {
+      "surface": "chatgpt_live_fetch",
+      "renders_js": null,
+      "confidence": "low",
+      "evidence": "ChatGPT-User performs user-triggered fetches; no vendor documentation on rendering. Name this surface only for robots-reach effects on the live fetch.",
+      "source": "https://developers.openai.com/api/docs/bots",
+      "verified_in": "PHASE1_REVIEW.md section 4.1"
+    },
+    {
+      "surface": "claude_live_fetch",
+      "renders_js": null,
+      "confidence": "low",
+      "evidence": "Claude-User performs user-triggered fetches and honors robots.txt; no vendor documentation on rendering.",
+      "source": "https://support.claude.com/en/articles/8896518-does-anthropic-crawl-data-from-the-web-and-how-can-site-owners-block-the-crawler",
+      "verified_in": "PHASE1_REVIEW.md section 4.1"
+    },
+    {
+      "surface": "perplexity_live_fetch",
+      "renders_js": null,
+      "confidence": "low",
+      "evidence": "Perplexity-User performs user-triggered fetches and generally ignores robots.txt; no vendor documentation on rendering.",
+      "source": "https://docs.perplexity.ai/docs/resources/perplexity-crawlers",
+      "verified_in": "PHASE1_REVIEW.md section 4.1"
     }
   ],
+  "surface_taxonomy": {
+    "citation_surfaces": ["google_ai_overviews_ai_mode", "bing_copilot", "chatgpt_search", "perplexity_retrieval", "claude_search"],
+    "live_fetch_surfaces": ["chatgpt_live_fetch", "claude_live_fetch", "perplexity_live_fetch"],
+    "evidence_only_surfaces": ["chatgpt_training", "claude_training"],
+    "rule": "affected_surfaces in findings may name citation + live-fetch surfaces only. Training surfaces are evidence for robots-policy findings, never an affected surface."
+  },
   "inline_state_caveat": "AI crawlers may still index content included in the initial HTML response, such as JSON data or delayed React Server Components. A fact present only inside __NEXT_DATA__/RSC/state payloads is PARTIALLY READABLE, not lost: severity medium, acceptance test 'the fact appears in visible raw text, not only in an inline script'.",
   "crawler_roles": [
     { "provider": "OpenAI", "agent": "GPTBot", "role": "training", "honors_robots": true, "source": "https://developers.openai.com/api/docs/bots" },
@@ -82,17 +112,19 @@
     {
       "directive": "noarchive",
       "where": "meta robots / X-Robots-Tag",
-      "effect": "Excluded from Bing Chat/Copilot answers and AI training entirely, while still ranking in ordinary Bing results. Commonly shipped by paywalled/news sites for unrelated reasons.",
+      "effect": "Will not be included in Bing Chat answers, not be linked to in the answers; will still appear in Bing's search results. Commonly shipped by paywalled/news sites for unrelated reasons.",
       "severity_hint": "high, surface-scoped to Copilot",
       "fix_hint": "If the intent was to prevent caching, nocache preserves ordinary listing behavior without the Copilot exclusion.",
-      "source": "Bing webmaster blog, Sept 2023 policy (verified_in SECOND_REVIEW.md 4.1)"
+      "source": "https://blogs.bing.com/webmaster/september-2023/Announcing-new-options-for-webmasters-to-control-usage-of-their-content-in-Bing-Chat",
+      "verified_in": "PHASE1_REVIEW.md section 4.2 (URL resolved 200 on 2026-09-03)"
     },
     {
       "directive": "nocache",
       "where": "meta robots / X-Robots-Tag",
-      "effect": "Page may appear in Bing Chat/Copilot only as title, snippet, and URL - the cached content is not used to compose answers.",
+      "effect": "May be included in Bing Chat answers, with only URL/Snippet/Title displayed; will still appear in Bing's search results.",
       "severity_hint": "high, surface-scoped to Copilot",
-      "source": "Bing webmaster blog, Sept 2023 policy (verified_in SECOND_REVIEW.md 4.1)"
+      "source": "https://blogs.bing.com/webmaster/september-2023/Announcing-new-options-for-webmasters-to-control-usage-of-their-content-in-Bing-Chat",
+      "verified_in": "PHASE1_REVIEW.md section 4.2 (URL resolved 200 on 2026-09-03)"
     },
     {
       "directive": "nosnippet",
