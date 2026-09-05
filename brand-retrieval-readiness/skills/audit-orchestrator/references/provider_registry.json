@@ -1,7 +1,7 @@
 {
   "registry_version": "1.0.0",
   "last_verified": "2026-09",
-  "maintenance": "Every provider behavior a finding relies on must trace to a source here. Quotes were verified verbatim in the review sessions recorded in SECOND_REVIEW.md / INDEPENDENT_REVIEW.md; re-verify all source URLs and last_verified dates before submission (BUILD_PLAN Phase 7). Never encode undocumented product-to-backend mappings or GEO-vendor claims.",
+  "maintenance": "Every provider behavior a finding relies on must trace to the source URL in the same entry. Verification dates record when the source was checked (review sessions of 2026-09-03, archived in docs/). Re-verify all sources and dates before submission. Never encode undocumented product-to-backend mappings or GEO-vendor claims.",
   "render_evidence": [
     {
       "surface": "google_ai_overviews_ai_mode",
@@ -9,7 +9,7 @@
       "confidence": "high",
       "evidence": "Googlebot renders JavaScript with the Web Rendering Service and AI features are built into Search; the robots.txt directives for Googlebot are the stated control.",
       "source": "https://developers.google.com/search/docs/appearance/ai-features",
-      "verified_in": "SECOND_REVIEW.md section 1"
+      "verified": "2026-09-03"
     },
     {
       "surface": "bing_copilot",
@@ -17,7 +17,7 @@
       "confidence": "high",
       "evidence": "Bingbot renders JavaScript; Copilot inherits the Bing index. noarchive/nocache semantics below are Bing-documented.",
       "source": "https://www.bing.com/webmasters/help/webmaster-guidelines-30fba23a",
-      "verified_in": "SECOND_REVIEW.md section 4.1"
+      "verified": "2026-09-03"
     },
     {
       "surface": "perplexity_retrieval",
@@ -26,7 +26,7 @@
       "evidence": "PerplexityBot fetches raw HTML and does not execute JavaScript (measured among AI crawlers requesting but not executing JS assets).",
       "source": "https://vercel.com/blog/the-rise-of-the-ai-crawler",
       "evidence_date": "2024-12-17",
-      "verified_in": "SECOND_REVIEW.md section 2.2"
+      "verified": "2026-09-03"
     },
     {
       "surface": "chatgpt_training",
@@ -35,7 +35,7 @@
       "evidence": "GPTBot fetches JS assets in ~11.5% of hits and executes none; content in the initial HTML (including inline JSON/state payloads) remains readable.",
       "source": "https://vercel.com/blog/the-rise-of-the-ai-crawler",
       "evidence_date": "2024-12-17",
-      "verified_in": "SECOND_REVIEW.md sections 2.2 and 4"
+      "verified": "2026-09-03"
     },
     {
       "surface": "chatgpt_search",
@@ -43,7 +43,7 @@
       "confidence": "medium",
       "evidence": "Third-party tests report OAI-SearchBot does not render; no vendor documentation states either way. Carry surface-scoped findings at medium confidence and say so.",
       "source": "https://developers.openai.com/api/docs/bots",
-      "verified_in": "SECOND_REVIEW.md section 2.2"
+      "verified": "2026-09-03"
     },
     {
       "surface": "claude_training",
@@ -52,7 +52,7 @@
       "evidence": "ClaudeBot fetches JS assets in ~23.8% of hits and executes none.",
       "source": "https://vercel.com/blog/the-rise-of-the-ai-crawler",
       "evidence_date": "2024-12-17",
-      "verified_in": "SECOND_REVIEW.md section 2.2"
+      "verified": "2026-09-03"
     },
     {
       "surface": "claude_search",
@@ -60,7 +60,7 @@
       "confidence": "medium",
       "evidence": "No first-party or strong third-party evidence documents whether Claude-SearchBot renders. Treat render-gap findings for this surface as medium confidence.",
       "source": "https://support.claude.com/en/articles/8896518-does-anthropic-crawl-data-from-the-web-and-how-can-site-owners-block-the-crawler",
-      "verified_in": "SECOND_REVIEW.md section 2.2"
+      "verified": "2026-09-03"
     },
     {
       "surface": "chatgpt_live_fetch",
@@ -68,7 +68,7 @@
       "confidence": "low",
       "evidence": "ChatGPT-User performs user-triggered fetches; no vendor documentation on rendering. Name this surface only for robots-reach effects on the live fetch.",
       "source": "https://developers.openai.com/api/docs/bots",
-      "verified_in": "PHASE1_REVIEW.md section 4.1"
+      "verified": "2026-09-03"
     },
     {
       "surface": "claude_live_fetch",
@@ -76,7 +76,7 @@
       "confidence": "low",
       "evidence": "Claude-User performs user-triggered fetches and honors robots.txt; no vendor documentation on rendering.",
       "source": "https://support.claude.com/en/articles/8896518-does-anthropic-crawl-data-from-the-web-and-how-can-site-owners-block-the-crawler",
-      "verified_in": "PHASE1_REVIEW.md section 4.1"
+      "verified": "2026-09-03"
     },
     {
       "surface": "perplexity_live_fetch",
@@ -84,29 +84,121 @@
       "confidence": "low",
       "evidence": "Perplexity-User performs user-triggered fetches and generally ignores robots.txt; no vendor documentation on rendering.",
       "source": "https://docs.perplexity.ai/docs/resources/perplexity-crawlers",
-      "verified_in": "PHASE1_REVIEW.md section 4.1"
+      "verified": "2026-09-03"
     }
   ],
   "surface_taxonomy": {
-    "citation_surfaces": ["google_ai_overviews_ai_mode", "bing_copilot", "chatgpt_search", "perplexity_retrieval", "claude_search"],
-    "live_fetch_surfaces": ["chatgpt_live_fetch", "claude_live_fetch", "perplexity_live_fetch"],
-    "evidence_only_surfaces": ["chatgpt_training", "claude_training"],
+    "citation_surfaces": [
+      "google_ai_overviews_ai_mode",
+      "bing_copilot",
+      "chatgpt_search",
+      "perplexity_retrieval",
+      "claude_search"
+    ],
+    "live_fetch_surfaces": [
+      "chatgpt_live_fetch",
+      "claude_live_fetch",
+      "perplexity_live_fetch"
+    ],
+    "evidence_only_surfaces": [
+      "chatgpt_training",
+      "claude_training"
+    ],
     "rule": "affected_surfaces in findings may name citation + live-fetch surfaces only. Training surfaces are evidence for robots-policy findings, never an affected surface."
   },
   "inline_state_caveat": "AI crawlers may still index content included in the initial HTML response, such as JSON data or delayed React Server Components. A fact present only inside __NEXT_DATA__/RSC/state payloads is PARTIALLY READABLE, not lost: severity medium, acceptance test 'the fact appears in visible raw text, not only in an inline script'.",
   "crawler_roles": [
-    { "provider": "OpenAI", "agent": "GPTBot", "role": "training", "honors_robots": true, "source": "https://developers.openai.com/api/docs/bots" },
-    { "provider": "OpenAI", "agent": "OAI-SearchBot", "role": "search-index", "honors_robots": true, "notes": "Blocking this agent is the documented ChatGPT-search exclusion mechanism; see verbatim_quotes[0].", "source": "https://developers.openai.com/api/docs/bots" },
-    { "provider": "OpenAI", "agent": "ChatGPT-User", "role": "user-fetcher", "honors_robots": "may-not-apply", "notes": "User-initiated fetches: robots.txt rules may not apply; not used to determine Search inclusion. A Disallow against it does not remove ChatGPT search citations.", "source": "https://developers.openai.com/api/docs/bots" },
-    { "provider": "OpenAI", "agent": "OAI-AdsBot", "role": "ads", "honors_robots": true, "source": "https://developers.openai.com/api/docs/bots" },
-    { "provider": "Anthropic", "agent": "ClaudeBot", "role": "training", "honors_robots": true, "source": "https://support.claude.com/en/articles/8896518-does-anthropic-crawl-data-from-the-web-and-how-can-site-owners-block-the-crawler" },
-    { "provider": "Anthropic", "agent": "Claude-SearchBot", "role": "search-index", "honors_robots": true, "source": "https://support.claude.com/en/articles/8896518-does-anthropic-crawl-data-from-the-web-and-how-can-site-owners-block-the-crawler" },
-    { "provider": "Anthropic", "agent": "Claude-User", "role": "user-fetcher", "honors_robots": true, "notes": "All three Anthropic agents honor robots.txt - unlike OpenAI/Perplexity user-fetchers. A Disallow against Claude-User removes Claude's live fetch; the same rule against ChatGPT-User or Perplexity-User probably does nothing. Severity and wording must differ.", "source": "https://support.claude.com/en/articles/8896518-does-anthropic-crawl-data-from-the-web-and-how-can-site-owners-block-the-crawler" },
-    { "provider": "Perplexity", "agent": "PerplexityBot", "role": "search-index", "honors_robots": true, "source": "https://docs.perplexity.ai/docs/resources/perplexity-crawlers" },
-    { "provider": "Perplexity", "agent": "Perplexity-User", "role": "user-fetcher", "honors_robots": false, "notes": "Generally ignores robots.txt (user-initiated fetches).", "source": "https://docs.perplexity.ai/docs/resources/perplexity-crawlers" },
-    { "provider": "Google", "agent": "Googlebot", "role": "search-index", "honors_robots": true, "notes": "Renders via the Web Rendering Service; sole access control for AI Overviews / AI Mode. noindex/nosnippet/max-snippet/data-nosnippet are the stated snippet/information controls.", "source": "https://developers.google.com/crawling/docs/crawlers-fetchers/google-common-crawlers" },
-    { "provider": "Google", "agent": "Google-Extended", "role": "token-not-a-crawler", "honors_robots": "token", "notes": "A standalone robots product token controlling downstream Gemini/Vertex use of content Google has already crawled. It has NO HTTP User-Agent string - never include it in UA probes - and does not impact Google Search inclusion.", "source": "https://developers.google.com/crawling/docs/crawlers-fetchers/google-common-crawlers" },
-    { "provider": "Bing", "agent": "Bingbot", "role": "search-index", "honors_robots": true, "notes": "Renders JavaScript; Bing index feeds Copilot. noarchive/nocache meta/X-Robots-Tag directives have documented Copilot-answer semantics - see snippet_controls.", "source": "https://www.bing.com/webmasters/help/webmaster-guidelines-30fba23a" }
+    {
+      "provider": "OpenAI",
+      "agent": "GPTBot",
+      "role": "training",
+      "honors_robots": true,
+      "source": "https://developers.openai.com/api/docs/bots"
+    },
+    {
+      "provider": "OpenAI",
+      "agent": "OAI-SearchBot",
+      "role": "search-index",
+      "honors_robots": true,
+      "notes": "Blocking this agent is the documented ChatGPT-search exclusion mechanism; see verbatim_quotes[0].",
+      "source": "https://developers.openai.com/api/docs/bots"
+    },
+    {
+      "provider": "OpenAI",
+      "agent": "ChatGPT-User",
+      "role": "user-fetcher",
+      "honors_robots": "may-not-apply",
+      "notes": "User-initiated fetches: robots.txt rules may not apply; not used to determine Search inclusion. A Disallow against it does not remove ChatGPT search citations.",
+      "source": "https://developers.openai.com/api/docs/bots"
+    },
+    {
+      "provider": "OpenAI",
+      "agent": "OAI-AdsBot",
+      "role": "ads",
+      "honors_robots": true,
+      "source": "https://developers.openai.com/api/docs/bots"
+    },
+    {
+      "provider": "Anthropic",
+      "agent": "ClaudeBot",
+      "role": "training",
+      "honors_robots": true,
+      "source": "https://support.claude.com/en/articles/8896518-does-anthropic-crawl-data-from-the-web-and-how-can-site-owners-block-the-crawler"
+    },
+    {
+      "provider": "Anthropic",
+      "agent": "Claude-SearchBot",
+      "role": "search-index",
+      "honors_robots": true,
+      "source": "https://support.claude.com/en/articles/8896518-does-anthropic-crawl-data-from-the-web-and-how-can-site-owners-block-the-crawler"
+    },
+    {
+      "provider": "Anthropic",
+      "agent": "Claude-User",
+      "role": "user-fetcher",
+      "honors_robots": true,
+      "notes": "All three Anthropic agents honor robots.txt - unlike OpenAI/Perplexity user-fetchers. A Disallow against Claude-User removes Claude's live fetch; the same rule against ChatGPT-User or Perplexity-User probably does nothing. Severity and wording must differ.",
+      "source": "https://support.claude.com/en/articles/8896518-does-anthropic-crawl-data-from-the-web-and-how-can-site-owners-block-the-crawler"
+    },
+    {
+      "provider": "Perplexity",
+      "agent": "PerplexityBot",
+      "role": "search-index",
+      "honors_robots": true,
+      "source": "https://docs.perplexity.ai/docs/resources/perplexity-crawlers"
+    },
+    {
+      "provider": "Perplexity",
+      "agent": "Perplexity-User",
+      "role": "user-fetcher",
+      "honors_robots": false,
+      "notes": "Generally ignores robots.txt (user-initiated fetches).",
+      "source": "https://docs.perplexity.ai/docs/resources/perplexity-crawlers"
+    },
+    {
+      "provider": "Google",
+      "agent": "Googlebot",
+      "role": "search-index",
+      "honors_robots": true,
+      "notes": "Renders via the Web Rendering Service; sole access control for AI Overviews / AI Mode. noindex/nosnippet/max-snippet/data-nosnippet are the stated snippet/information controls.",
+      "source": "https://developers.google.com/crawling/docs/crawlers-fetchers/google-common-crawlers"
+    },
+    {
+      "provider": "Google",
+      "agent": "Google-Extended",
+      "role": "token-not-a-crawler",
+      "honors_robots": "token",
+      "notes": "A standalone robots product token controlling downstream Gemini/Vertex use of content Google has already crawled. It has NO HTTP User-Agent string - never include it in UA probes - and does not impact Google Search inclusion.",
+      "source": "https://developers.google.com/crawling/docs/crawlers-fetchers/google-common-crawlers"
+    },
+    {
+      "provider": "Bing",
+      "agent": "Bingbot",
+      "role": "search-index",
+      "honors_robots": true,
+      "notes": "Renders JavaScript; Bing index feeds Copilot. noarchive/nocache meta/X-Robots-Tag directives have documented Copilot-answer semantics - see snippet_controls.",
+      "source": "https://www.bing.com/webmasters/help/webmaster-guidelines-30fba23a"
+    }
   ],
   "snippet_controls": [
     {
@@ -116,7 +208,7 @@
       "severity_hint": "high, surface-scoped to Copilot",
       "fix_hint": "If the intent was to prevent caching, nocache preserves ordinary listing behavior without the Copilot exclusion.",
       "source": "https://blogs.bing.com/webmaster/september-2023/Announcing-new-options-for-webmasters-to-control-usage-of-their-content-in-Bing-Chat",
-      "verified_in": "PHASE1_REVIEW.md section 4.2 (URL resolved 200 on 2026-09-03)"
+      "verified": "2026-09-03"
     },
     {
       "directive": "nocache",
@@ -124,7 +216,7 @@
       "effect": "May be included in Bing Chat answers, with only URL/Snippet/Title displayed; will still appear in Bing's search results.",
       "severity_hint": "high, surface-scoped to Copilot",
       "source": "https://blogs.bing.com/webmaster/september-2023/Announcing-new-options-for-webmasters-to-control-usage-of-their-content-in-Bing-Chat",
-      "verified_in": "PHASE1_REVIEW.md section 4.2 (URL resolved 200 on 2026-09-03)"
+      "verified": "2026-09-03"
     },
     {
       "directive": "nosnippet",
@@ -156,15 +248,69 @@
     }
   ],
   "verbatim_quotes": [
-    { "text": "will not be shown in ChatGPT search answers, though can still appear as navigational links", "about": "sites disallowing OAI-SearchBot", "source": "https://developers.openai.com/api/docs/bots", "verified_in": "SECOND_REVIEW.md section 1", "use_in": "OAI-SearchBot disallow findings - documented mechanism, not inference" },
-    { "text": "robots.txt rules may not apply", "about": "ChatGPT-User user-initiated fetches", "source": "https://developers.openai.com/api/docs/bots", "verified_in": "SECOND_REVIEW.md section 1", "use_in": "role-scoped robots analysis" },
-    { "text": "not used to determine whether content may appear in Search", "about": "ChatGPT-User", "source": "https://developers.openai.com/api/docs/bots", "verified_in": "SECOND_REVIEW.md section 1", "use_in": "blocking ChatGPT-User does not affect ChatGPT search citations" },
-    { "text": "generally ignores robots.txt", "about": "Perplexity-User", "source": "https://docs.perplexity.ai/docs/resources/perplexity-crawlers", "verified_in": "SECOND_REVIEW.md section 1", "use_in": "role-scoped robots analysis" },
-    { "text": "There are no additional requirements to appear in AI Overviews or AI Mode, nor other special optimizations necessary", "about": "Google AI features", "source": "https://developers.google.com/search/docs/appearance/ai-features", "verified_in": "INDEPENDENT_REVIEW.md section 2.4", "use_in": "README defense of the evidence-first audit against checklist audits" },
-    { "text": "To limit the information shown from your pages in Search, use nosnippet, data-nosnippet, max-snippet, or noindex controls", "about": "Google AI features snippet controls", "source": "https://developers.google.com/search/docs/appearance/ai-features", "verified_in": "SECOND_REVIEW.md section 4.2", "use_in": "nosnippet/max-snippet findings" },
-    { "text": "doesn't have a separate HTTP request user agent string", "about": "Google-Extended", "source": "https://developers.google.com/crawling/docs/crawlers-fetchers/google-common-crawlers", "verified_in": "SECOND_REVIEW.md section 1", "use_in": "forbidding Google-Extended from UA probes" },
-    { "text": "does not impact a site's inclusion in Google Search", "about": "Google-Extended", "source": "https://developers.google.com/crawling/docs/crawlers-fetchers/google-common-crawlers", "verified_in": "SECOND_REVIEW.md section 1", "use_in": "preventing false training-token findings" },
-    { "text": "You don't need to create new machine readable files, AI text files, or markup", "about": "Google AI features / llms.txt-adjacent claims", "source": "https://developers.google.com/search/docs/appearance/ai-features", "verified_in": "SECOND_REVIEW.md section 1", "use_in": "keeping llms.txt a low, docs-scoped opportunity - never discoverability" }
+    {
+      "text": "will not be shown in ChatGPT search answers, though can still appear as navigational links",
+      "about": "sites disallowing OAI-SearchBot",
+      "source": "https://developers.openai.com/api/docs/bots",
+      "verified": "2026-09-03",
+      "use_in": "OAI-SearchBot disallow findings - documented mechanism, not inference"
+    },
+    {
+      "text": "robots.txt rules may not apply",
+      "about": "ChatGPT-User user-initiated fetches",
+      "source": "https://developers.openai.com/api/docs/bots",
+      "verified": "2026-09-03",
+      "use_in": "role-scoped robots analysis"
+    },
+    {
+      "text": "not used to determine whether content may appear in Search",
+      "about": "ChatGPT-User",
+      "source": "https://developers.openai.com/api/docs/bots",
+      "verified": "2026-09-03",
+      "use_in": "blocking ChatGPT-User does not affect ChatGPT search citations"
+    },
+    {
+      "text": "generally ignores robots.txt",
+      "about": "Perplexity-User",
+      "source": "https://docs.perplexity.ai/docs/resources/perplexity-crawlers",
+      "verified": "2026-09-03",
+      "use_in": "role-scoped robots analysis"
+    },
+    {
+      "text": "There are no additional requirements to appear in AI Overviews or AI Mode, nor other special optimizations necessary",
+      "about": "Google AI features",
+      "source": "https://developers.google.com/search/docs/appearance/ai-features",
+      "verified": "2026-09-03",
+      "use_in": "README defense of the evidence-first audit against checklist audits"
+    },
+    {
+      "text": "To limit the information shown from your pages in Search, use nosnippet, data-nosnippet, max-snippet, or noindex controls",
+      "about": "Google AI features snippet controls",
+      "source": "https://developers.google.com/search/docs/appearance/ai-features",
+      "verified": "2026-09-03",
+      "use_in": "nosnippet/max-snippet findings"
+    },
+    {
+      "text": "doesn't have a separate HTTP request user agent string",
+      "about": "Google-Extended",
+      "source": "https://developers.google.com/crawling/docs/crawlers-fetchers/google-common-crawlers",
+      "verified": "2026-09-03",
+      "use_in": "forbidding Google-Extended from UA probes"
+    },
+    {
+      "text": "does not impact a site's inclusion in Google Search",
+      "about": "Google-Extended",
+      "source": "https://developers.google.com/crawling/docs/crawlers-fetchers/google-common-crawlers",
+      "verified": "2026-09-03",
+      "use_in": "preventing false training-token findings"
+    },
+    {
+      "text": "You don't need to create new machine readable files, AI text files, or markup",
+      "about": "Google AI features / llms.txt-adjacent claims",
+      "source": "https://developers.google.com/search/docs/appearance/ai-features",
+      "verified": "2026-09-03",
+      "use_in": "keeping llms.txt a low, docs-scoped opportunity - never discoverability"
+    }
   ],
   "ua_probe_policy": "Probe with a bot token's UA only on paths robots.txt allows for that token (homepage only); if disallowed, the robots rule itself is the finding and no probe is run. A challenged response is distinguished from an origin 403 by cf-mitigated headers and by content-type text/html even when robots.txt or sitemap.xml was requested. Spoofed-UA differentials cap at medium confidence (see severity_model.md)."
 }

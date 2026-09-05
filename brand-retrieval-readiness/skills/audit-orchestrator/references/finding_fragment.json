@@ -8,7 +8,7 @@
   "additionalProperties": false,
   "properties": {
     "skill_id": {
-      "enum": ["access-discovery-audit", "representation-parity-audit", "answerability-audit", "entity-consistency-audit", "freshness-consistency-audit", "referral-experience-audit"]
+      "enum": ["access-discovery-audit", "representation-parity-audit", "answer-coverage-audit", "entity-consistency-audit", "freshness-consistency-audit", "offsite-visibility-audit", "referral-experience-audit"]
     },
     "mode": { "enum": ["snapshot", "url"] },
     "generated_at": { "type": "string", "format": "date-time" },

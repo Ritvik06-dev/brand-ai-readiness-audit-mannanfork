@@ -295,7 +295,8 @@ def main():
         coverage["pages_selected"] = len(snap["discovery"]["selected"])
         coverage["raw_fetches_succeeded"] = len(snap["pages"])
         coverage["rendered_pages"] = 0
-        browser_ok = snap["capabilities"]["browser_available"]
+        caps = snap.get("capabilities", {})
+        browser_ok = bool(caps.get("browser", False))
         coverage["browser_available"] = browser_ok
         if not browser_ok:
             coverage["capabilities_unavailable"].append("browser")
@@ -303,7 +304,7 @@ def main():
                     " specialists_resolved = 0 and the judgment checks are not_evaluated."]
                    if args.degraded else [])
     limitations.append("The opportunities[] proactive set lands with the remediation"
-                       " playbook (Phase 5 per BUILD_PLAN.md).")
+                       " playbook (Phase 6).")
     report = {
         "site": args.site,
         "audited_at": now,

@@ -34,6 +34,8 @@ from there with explicit paths.
 
 - **Network:** `collect_snapshot.py` enforces a 120 s deadline, 8 s per request, serial
   requests. Do not retry it; read its printed notes instead.
+- **Off-site probes:** hard sub-budget of <= 6 queries, and the first thing shed at the
+  deadline. Absence of a search capability means `not_evaluated`, never a finding.
 - **Model turns:** each judgment specialist is ONE read (its excerpt file) + ONE judgment + ONE
   write (its fragment) — at most 3 tool calls each. Report build is at most 2 calls. Under time
   pressure, emit partial findings with `not_evaluated` — a valid partial report always beats an
@@ -49,11 +51,16 @@ from there with explicit paths.
    explicitly declared a local test fixture, in which case pass `--allow-private`. Refuse
    authenticated-area or site-altering requests entirely.
 
-2. **Snapshot.** Run:
-   `python3 <orchestrator>/scripts/collect_snapshot.py --url <URL> --out ./audit/snapshot.json`
-   It validates its own output, prints a small summary, and writes `audit/excerpts/<skill>.json`
-   for each judgment specialist. Read only the printed summary. If it reports unreachable or
-   deadline problems, continue with what was captured and record it.
+2. **Classify and declare.** Conservatively classify the site (multiple allowed, max 3):
+   `saas, ecommerce, local-business, docs-developer, publisher, gov-edu, marketplace-platform,
+   org-portfolio` — this gates page sampling, question archetypes, in-scope claim types, and
+   which checks apply. Declare the capabilities you actually have as comma-separated flags.
+   Then run:
+   `python3 <orchestrator>/scripts/collect_snapshot.py --url <URL> --out ./audit/snapshot.json --site-type <types> --capabilities web_fetch[,web_search][,browser][,subagents]`
+   Scripts take declared facts as flags and never probe for tools. It validates its own output,
+   prints a small summary, and writes `audit/excerpts/<skill>.json` for each judgment
+   specialist. Read only the printed summary. If it reports unreachable or deadline problems,
+   continue with what was captured and record it.
 
 3. **Enumerate specialists.** Resolve `MARKETPLACE_ROOT` (fallback chain below) and read
    `marketplace.json`. Specialists run in **manifest order** (skip this entrypoint).
@@ -64,14 +71,21 @@ from there with explicit paths.
    printed summary. If a specialist cannot be resolved, note it and continue.
 
 5. **Judgment specialists** (in manifest order):
-   - `answerability-audit`: read `audit/excerpts/answerability-audit.json` ONCE, follow its
-     SKILL.md, write `audit/findings/answerability-audit.json` AND `audit/passages.json`.
-   - Then run:
+   - `answer-coverage-audit`: read `audit/excerpts/answer-coverage-audit.json` ONCE, follow its
+     SKILL.md, write `audit/findings/answer-coverage-audit.json` AND `audit/passages.json`
+     (questions from two sources: `site-derived` and `market-derived`; market-derived questions
+     with no answering page feed `opportunities[]`, not findings).
+   - Then run the post-step:
      `python3 <orchestrator>/scripts/collect_snapshot.py --passages ./audit/passages.json --snapshot ./audit/snapshot.json --out ./audit/passages_checked.json`
+     (it also writes the offsite prompt-set excerpt).
    - `freshness-consistency-audit`: read `audit/excerpts/freshness-consistency-audit.json`
      once; write its fragment.
-   - `referral-experience-audit`: read `audit/excerpts/referral-experience-audit.json` once,
-     plus `audit/passages_checked.json`; write its fragment.
+   - `offsite-visibility-audit` (wave 2): read `audit/excerpts/offsite-visibility-audit.json`
+     (the prompt set) once. Run live probes ONLY if `web_search` was declared and the deadline
+     allows — off-site probes are the first thing shed. Without search, reason over the
+     snapshot's `external_presence[]` only; never invent probe results.
+   - `referral-experience-audit` (wave 2): read `audit/excerpts/referral-experience-audit.json`
+     once, plus `audit/passages_checked.json`; write its fragment.
 
 6. **Report.** Run:
    `python3 <orchestrator>/scripts/build_report.py --site <host> --out ./audit/report.json --snapshot ./audit/snapshot.json --fragment ./audit/findings/<each>.json`
@@ -81,6 +95,22 @@ from there with explicit paths.
 7. **Emit.** Present the human summary verbatim, then the report JSON. State `audit_status`,
    `coverage`, and every `not_evaluated` check explicitly — "not evaluated" is never a defect
    and never silently dropped.
+
+## Parallel dispatch (when the harness supports subagents)
+
+If your environment can run subagents concurrently, dispatch each specialist as its own task —
+it is substantially faster and the audit is bounded at 5 minutes. Give each one: the
+marketplace root, the snapshot path, its excerpt path, the path to its SKILL.md, and its output
+path. Require it to return ONLY a one-line status. Never the fragment contents, never page text.
+
+- **Wave 1 (no dependencies):** access-discovery, representation-parity, entity-consistency,
+  freshness-consistency, answer-coverage
+- **Post-step:** `collect_snapshot.py --passages audit/passages.json`
+- **Wave 2 (needs wave 1):** referral-experience (needs passages_checked),
+  offsite-visibility (needs the prompt set)
+
+If subagents are unavailable, run the same waves in order in this session. A specialist that
+fails or times out contributes `not_evaluated` entries. It never fails the audit.
 
 ## Composition fallback chain (resolving MARKETPLACE_ROOT)
 

@@ -6,9 +6,10 @@
     { "id": "audit-orchestrator", "path": "skills/audit-orchestrator", "entrypoint": true },
     { "id": "access-discovery-audit", "path": "skills/access-discovery-audit" },
     { "id": "representation-parity-audit", "path": "skills/representation-parity-audit" },
-    { "id": "answerability-audit", "path": "skills/answerability-audit" },
+    { "id": "answer-coverage-audit", "path": "skills/answer-coverage-audit" },
     { "id": "entity-consistency-audit", "path": "skills/entity-consistency-audit" },
     { "id": "freshness-consistency-audit", "path": "skills/freshness-consistency-audit" },
+    { "id": "offsite-visibility-audit", "path": "skills/offsite-visibility-audit" },
     { "id": "referral-experience-audit", "path": "skills/referral-experience-audit" }
   ]
 }

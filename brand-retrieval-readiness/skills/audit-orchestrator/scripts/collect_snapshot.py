@@ -646,7 +646,8 @@ def fetch_sitemap(fetcher, sitemap_url):
 
 
 def select_pages(candidate_urls, max_pages):
-    """Stratified, template-clustered selection of 6-8 representative pages."""
+    """Stratified, template-clustered selection of 6-8 representative pages.
+    Returns (urls, labels, cluster_rows); labels map url -> page_class."""
     prio = [
         (r"price|pricing|plan|plans|cost", "decision"),
         (r"doc|docs|help|faq|support|guide|tutorial|manual", "docs"),
@@ -665,31 +666,33 @@ def select_pages(candidate_urls, max_pages):
 
     for u in candidate_urls:
         clusters.setdefault(cluster_key(u), []).append(u)
-    picked = []
+    picked, labels = [], {}
     home = next((u for u in candidate_urls if urlparse(u).path in ("", "/")), None)
     if home:
         picked.append(home)
+        labels[home] = "homepage"
     cluster_rows = sorted(clusters.items(), key=lambda kv: -len(kv[1]))
-    for pattern, _label in prio:
+    for pattern, label in prio:
         for key, urls in cluster_rows:
             if len(picked) >= max_pages:
                 break
-            if any(re.search(pattern, key, re.I) for _u in [key]) or any(
-                    re.search(pattern, u, re.I) for u in urls[:3]):
+            if re.search(pattern, key, re.I) or any(re.search(pattern, u, re.I) for u in urls[:3]):
                 rep = urls[0]
-                if rep not in picked:
+                if rep not in labels:
                     picked.append(rep)
+                    labels[rep] = label
     for key, urls in cluster_rows:
         if len(picked) >= max_pages:
             break
-        if urls[0] not in picked:
+        if urls[0] not in labels:
             picked.append(urls[0])
+            labels[urls[0]] = "other"
     out, seen = [], set()
     for u in picked:
         if u not in seen:
             out.append(u)
             seen.add(u)
-    return out[:max_pages], [{"pattern": k, "count": len(v)} for k, v in cluster_rows[:15]]
+    return out[:max_pages], labels, [{"pattern": k, "count": len(v)} for k, v in cluster_rows[:15]]
 
 
 def probe_soft_404(fetcher, base):
@@ -833,10 +836,10 @@ def resolve_external_presence(fetcher, pages, site_host):
 
 
 def build_excerpts(pages, sitemap_summary):
-    budgets = {"answerability-audit": 24000, "freshness-consistency-audit": 16000,
+    budgets = {"answer-coverage-audit": 24000, "freshness-consistency-audit": 16000,
                "referral-experience-audit": 12000}
     ans_pages, frs_pages, ref_pages = [], [], []
-    totals = {"answerability-audit": 0, "freshness-consistency-audit": 0,
+    totals = {"answer-coverage-audit": 0, "freshness-consistency-audit": 0,
               "referral-experience-audit": 0}
 
     def bounded(locs, skill_id):
@@ -853,23 +856,23 @@ def build_excerpts(pages, sitemap_summary):
         heading_tree = [{"level": h["level"], "text": h["text"], "id": h["id"]}
                         for h in p["headings"]][:40]
         sections = json.loads(json.dumps(p["_sections"])) if p.get("_sections") else []
-        excerpt_locs = [{"char_offset": s["char_offset"], "text": s["text"],
+        excerpt_locs = [{"char_offset": s["char_offset"], "text": s["text"][:1500],
                          "location": ("under %s" % s["heading"]) if s["heading"] else "top of page"}
                         for s in sections if s["text"]][:6]
         claims = p["claim_index"]
-        ans_pages.append({"url": p["requested_url"], "title": p["title"],
+        ans_pages.append({"url": p["requested_url"], "page_class": p.get("page_class"), "title": p["title"],
                           "heading_tree": heading_tree,
-                          "main_content_excerpts": bounded(excerpt_locs, "answerability-audit"),
+                          "main_content_excerpts": bounded(excerpt_locs, "answer-coverage-audit"),
                           "claim_index_subset": claims})
-        frs_pages.append({"url": p["requested_url"], "title": p["title"],
+        frs_pages.append({"url": p["requested_url"], "page_class": p.get("page_class"), "title": p["title"],
                           "heading_tree": [],
                           "main_content_excerpts": bounded(excerpt_locs[:2], "freshness-consistency-audit"),
                           "claim_index_subset": claims})
-        ref_pages.append({"url": p["requested_url"], "title": p["title"],
+        ref_pages.append({"url": p["requested_url"], "page_class": p.get("page_class"), "title": p["title"],
                           "heading_tree": heading_tree,
                           "main_content_excerpts": bounded(excerpt_locs[:2], "referral-experience-audit"),
                           "claim_index_subset": []})
-    ans = {"kind": "excerpt", "skill_id": "answerability-audit", "budget_chars": 24000,
+    ans = {"kind": "excerpt", "skill_id": "answer-coverage-audit", "budget_chars": 24000,
            "generated_at": _now(), "pages": ans_pages, "extras": {}}
     frs = {"kind": "excerpt", "skill_id": "freshness-consistency-audit",
            "budget_chars": 16000, "generated_at": _now(), "pages": frs_pages,
@@ -929,9 +932,25 @@ def run_collect(args):
         fail("URL must be absolute http(s): %s" % url)
     if parts.username or parts.password:
         fail("refusing URL with credentials")
+    # declared facts, probed never: site_type is the agent's classification
+    notes = []
+    valid_site_types = {"saas", "ecommerce", "local-business", "docs-developer",
+                        "publisher", "gov-edu", "marketplace-platform", "org-portfolio"}
+    site_types = [s.strip() for s in args.site_type.split(",") if s.strip()]
+    bad_types = [s for s in site_types if s not in valid_site_types]
+    if bad_types or len(site_types) > 3:
+        fail("invalid --site-type %s (valid: %s; max 3)" % (bad_types, sorted(valid_site_types)), [])
+    declared_caps = {c.strip() for c in args.capabilities.split(",") if c.strip()}
+    bad_caps = declared_caps - {"web_fetch", "web_search", "browser", "subagents"}
+    if bad_caps:
+        fail("invalid --capabilities values: %s" % sorted(bad_caps), [])
+    if "browser" in declared_caps:
+        notes.append("browser capability declared; representation checks may upgrade confidence")
+    else:
+        notes.append("no browser: render checks run no-browser at limited confidence")
+
     base = urlunparse((parts.scheme, parts.netloc, "/", "", "", ""))
     fetcher = Fetcher(deadline_ts, args.allow_private)
-    notes = []
 
     # robots -----------------------------------------------------------------
     robots_res = fetcher.fetch(urljoin(base, "/robots.txt"), max_bytes=SMALL_BYTES)
@@ -964,7 +983,7 @@ def run_collect(args):
     home_ex.finalize()
 
     candidates = discover_candidates(home_res, home_ex, sitemap_urls, fetcher, base)
-    selected, cluster_rows = select_pages([base] + candidates, args.max_pages)
+    selected, labels, cluster_rows = select_pages([base] + candidates, args.max_pages)
     sitemap_summary = None
     if sitemap_urls:
         sitemap_summary = fetch_sitemap(fetcher, sitemap_urls[0])
@@ -989,6 +1008,7 @@ def run_collect(args):
         ex.finalize()
         page = capture_page(res, u, ex, lastmod_by_url.get(u.rstrip("/")))
         page["_sections"] = ex.sections
+        page["page_class"] = labels.get(u, "other")
         pages.append(page)
 
     # probes ------------------------------------------------------------------
@@ -1008,10 +1028,11 @@ def run_collect(args):
         "requested_url": url,
         "audited_at": _now(),
         "network_deadline_seconds": args.deadline,
-        "capabilities": {"browser_available": False,
-                         "browser_note": "no browser integration; render checks run "
-                                         "no-browser and report limited confidence",
-                         "network_available": True, "notes": notes},
+        "capabilities": {"web_fetch": True,
+                         "web_search": "web_search" in declared_caps,
+                         "browser": "browser" in declared_caps,
+                         "subagents": "subagents" in declared_caps,
+                         "notes": notes},
         "robots": {"status": r_status, "http_status": r_http,
                    "groups": robot_rows,
                    "sitemaps_declared": sitemap_urls[:10],
@@ -1033,6 +1054,11 @@ def run_collect(args):
     errs = validate_schema(snapshot, SNAPSHOT_SCHEMA)
     if errs:
         fail("snapshot does not validate against snapshot_schema.json", errs)
+    if site_types:
+        snapshot["site_type"] = site_types
+        errs = validate_schema(snapshot, SNAPSHOT_SCHEMA)
+        if errs:
+            fail("snapshot (site_type) does not validate", errs)
 
     out_dir = os.path.dirname(os.path.abspath(args.out))
     os.makedirs(out_dir, exist_ok=True)
@@ -1101,6 +1127,36 @@ def run_passages(args):
     print("collect_snapshot --passages: %d/%d passages contiguous -> %s"
           % (n_ok, len(results), args.out))
 
+    # offsite prompt-set excerpt: the questions (with their source) plus the
+    # snapshot's external presence; written here because the prompt set only
+    # exists after answer-coverage runs (GAMEPLAN 4.3).
+    exc_dir = os.path.join(os.path.dirname(os.path.abspath(args.out)), "excerpts")
+    os.makedirs(exc_dir, exist_ok=True)
+    offsite = {
+        "kind": "excerpt", "skill_id": "offsite-visibility-audit", "budget_chars": 8000,
+        "generated_at": _now(),
+        "pages": [{"url": q.get("expected_page"), "page_class": None, "title": None,
+                   "heading_tree": [], "main_content_excerpts": [],
+                   "claim_index_subset": []}
+                  for q in passages.get("questions", [])][:8],
+        "extras": {"prompt_set": [{"question_id": q["question_id"],
+                                    "question": q["question"],
+                                    "source": q.get("source", "site-derived")}
+                                   for q in passages.get("questions", [])],
+                   "external_presence": snapshot.get("external_presence", []),
+                   "search_declared": snapshot.get("capabilities", {}).get("web_search", False),
+                   "note": "live probes only when search_declared; sheds first at the "
+                           "deadline; without search, snapshot-only reasoning over "
+                           "external_presence and never invented probe results"},
+    }
+    offsite_path = os.path.join(exc_dir, "offsite-visibility-audit.json")
+    with open(offsite_path, "w", encoding="utf-8") as fh:
+        json.dump(offsite, fh, indent=2, ensure_ascii=False)
+        fh.write("\n")
+    print("  offsite prompt-set excerpt -> %s (%d prompts, search_declared=%s)"
+          % (offsite_path, len(offsite["extras"]["prompt_set"]),
+             offsite["extras"]["search_declared"]))
+
 
 SNAPSHOT_SCHEMA = None  # loaded in main()
 ROLE_BY_TOKEN = {}  # agent token -> registry role; loaded in main()
@@ -1134,6 +1190,13 @@ def main():
     ap.add_argument("--allow-private", action="store_true",
                     help="permit private/loopback hosts and non-standard ports "
                          "(local test fixtures only)")
+    ap.add_argument("--site-type", default="",
+                    help="the agent's conservative classification, comma-separated "
+                         "(max 3): saas,ecommerce,local-business,docs-developer,"
+                         "publisher,gov-edu,marketplace-platform,org-portfolio")
+    ap.add_argument("--capabilities", default="",
+                    help="declared capabilities, comma-separated: "
+                         "web_fetch,web_search,browser,subagents")
     ap.add_argument("--max-pages", type=int, default=8)
     ap.add_argument("--deadline", type=int, default=120, help="network deadline seconds")
     args = ap.parse_args()

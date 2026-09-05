@@ -15,7 +15,7 @@
       "additionalProperties": false,
       "properties": {
         "kind": { "const": "excerpt" },
-        "skill_id": { "enum": ["answerability-audit", "freshness-consistency-audit", "referral-experience-audit"] },
+        "skill_id": { "enum": ["answer-coverage-audit", "freshness-consistency-audit", "referral-experience-audit", "offsite-visibility-audit"] },
         "budget_chars": { "type": "integer", "minimum": 1, "description": "total excerpt budget for this skill's input file" },
         "generated_at": { "type": "string", "format": "date-time" },
         "pages": { "type": "array", "maxItems": 8, "items": { "$ref": "#/definitions/excerpt_page" } },
@@ -28,10 +28,11 @@
     },
     "excerpt_page": {
       "type": "object",
-      "required": ["url", "title", "heading_tree", "main_content_excerpts"],
+      "required": ["url", "page_class", "title", "heading_tree", "main_content_excerpts"],
       "additionalProperties": false,
       "properties": {
         "url": { "type": "string" },
+        "page_class": { "type": ["string", "null"], "description": "homepage, decision, docs, recent, about, product, trust, other" },
         "title": { "type": ["string", "null"] },
         "heading_tree": {
           "type": "array",
@@ -83,18 +84,19 @@
       "additionalProperties": false,
       "properties": {
         "kind": { "const": "passages" },
-        "skill_id": { "const": "answerability-audit" },
+        "skill_id": { "const": "answer-coverage-audit" },
         "generated_at": { "type": "string", "format": "date-time" },
         "questions": { "type": "array", "minItems": 1, "items": { "$ref": "#/definitions/question" } }
       }
     },
     "question": {
       "type": "object",
-      "required": ["question_id", "question", "expected_page", "candidate_passage"],
+      "required": ["question_id", "question", "source", "expected_page", "candidate_passage"],
       "additionalProperties": false,
       "properties": {
         "question_id": { "type": "string", "pattern": "^Q-[0-9]{3}$" },
         "question": { "type": "string" },
+        "source": { "enum": ["site-derived", "market-derived"], "description": "site-derived: what the site's own pages claim to answer; market-derived: what a category customer would ask regardless. Market-derived questions with no answering page feed opportunities[], not findings. The prompt set also drives offsite-visibility probes." },
         "intent": { "enum": ["identity", "capability", "transaction", "procedure", "temporal", "comparison", "trust", "local"] },
         "expected_page": { "type": "string", "description": "the page that should answer this question" },
         "candidate_passage": { "type": "string", "maxLength": 2000, "description": "verbatim from the page" },

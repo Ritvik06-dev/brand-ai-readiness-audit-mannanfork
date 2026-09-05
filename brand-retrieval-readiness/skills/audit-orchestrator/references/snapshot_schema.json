@@ -10,15 +10,23 @@
     "snapshot_version": { "const": 1 },
     "requested_url": { "type": "string" },
     "audited_at": { "type": "string", "format": "date-time" },
+    "site_type": {
+      "type": "array",
+      "items": { "enum": ["saas", "ecommerce", "local-business", "docs-developer", "publisher", "gov-edu", "marketplace-platform", "org-portfolio"] },
+      "description": "The agent's conservative classification (multiple allowed), recorded via --site-type. Drives page sampling, question archetypes, in-scope claim types, and which checks apply. The Generalization rubric line.",
+      "maxItems": 3
+    },
     "network_deadline_seconds": { "type": "integer", "description": "120s per BUILD_PLAN; per-request 8s, concurrency <=3, one retry on safe GETs" },
     "capabilities": {
       "type": "object",
-      "required": ["browser_available", "network_available"],
+      "description": "Declared by the agent via --capabilities (web_fetch,web_search,browser,subagents); scripts take declared facts as flags and never probe for tools (GAMEPLAN 5.2).",
+      "required": ["web_fetch", "web_search", "browser", "subagents"],
       "additionalProperties": false,
       "properties": {
-        "browser_available": { "type": "boolean" },
-        "browser_note": { "type": ["string", "null"] },
-        "network_available": { "type": "boolean" },
+        "web_fetch": { "type": "boolean" },
+        "web_search": { "type": "boolean", "description": "gates offsite-visibility live probes" },
+        "browser": { "type": "boolean", "description": "a representation tool, not an experience simulator; never installed by default" },
+        "subagents": { "type": "boolean", "description": "whether parallel specialist dispatch was used (GAMEPLAN 5.4)" },
         "notes": { "type": "array", "items": { "type": "string" } }
       }
     },
@@ -131,6 +139,7 @@
             }
           },
           "sitemap_lastmod": { "type": ["string", "null"], "description": "lastmod for this URL from the sitemap, when the URL appears there" },
+          "page_class": { "type": ["string", "null"], "description": "template class assigned at sampling: homepage, decision, docs, recent, about, product, trust, other" },
           "headings": { "type": "array", "items": { "type": "object", "required": ["level", "text"], "additionalProperties": false, "properties": { "level": { "type": "integer" }, "text": { "type": "string" }, "id": { "type": ["string", "null"] } } } },
           "links": { "type": "array", "items": { "type": "object", "required": ["href"], "additionalProperties": false, "properties": { "href": { "type": "string" }, "anchor_text": { "type": ["string", "null"] }, "rel": { "type": ["string", "null"] } } } },
           "jsonld": {

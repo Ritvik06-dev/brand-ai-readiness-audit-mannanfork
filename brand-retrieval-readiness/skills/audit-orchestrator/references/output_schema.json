@@ -92,7 +92,7 @@
     "priority": { "enum": ["critical", "high", "medium", "low"] },
     "effort": { "enum": ["small", "medium", "large"] },
     "category": {
-      "enum": ["access-discovery", "representation-parity", "answerability", "entity-consistency", "freshness-consistency", "referral-experience"]
+      "enum": ["access-discovery", "representation-parity", "answer-coverage", "entity-consistency", "freshness-consistency", "offsite-visibility", "referral-experience"]
     },
     "finding": {
       "type": "object",
