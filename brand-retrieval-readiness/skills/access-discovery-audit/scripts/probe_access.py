@@ -202,14 +202,35 @@ def check_robots_unavailable(snap):
         return result("ACC-ROBOTS-UNAVAILABLE", "pass", observations={
             "status": robots["status"], "http_status": robots.get("http_status"),
             "note": "404 means 'no crawl restrictions' - never a defect"})
-    # The snapshot records one robots attempt; the severity rule needs two
-    # consecutive 5xx for high/high. Single occurrence -> low confidence,
-    # which build_report routes to needs_verification.
+    # The collector records robots attempts (2 = one retry after a 5xx); the
+    # severity rule needs two consecutive 5xx for high/high. A single attempt
+    # -> low confidence, which build_report routes to needs_verification.
+    attempts = robots.get("attempts") or 1
+    if attempts >= 2:
+        return result(
+            "ACC-ROBOTS-UNAVAILABLE", "finding",
+            urls=[snap["requested_url"] + "/robots.txt"],
+            observations={"http_status": robots.get("http_status"),
+                          "recorded_attempts": attempts,
+                          "consecutive_5xx_rule": "2+ required for high/high - satisfied"},
+            evidence_quality="direct-measurement",
+            candidate=candidate(
+                "robots.txt is unavailable to crawlers (%s)" % robots.get("http_status"),
+                "high", "high",
+                "/robots.txt returned %s on %d consecutive attempts during the audit - the "
+                "severity rule's two-consecutive-5xx bar is met."
+                % (robots.get("http_status"), attempts),
+                "An unavailable robots.txt can delay crawling of the whole site; a 404 would "
+                "have meant 'no crawl restrictions', which is not a defect.",
+                "Restore robots.txt availability and monitor 5xx rates on it.",
+                "high", effort="small", owner="infrastructure",
+                acceptance="A re-audit observes robots.txt returning 200 (or the origin's "
+                           "intended response) on two consecutive requests."))
     return result(
         "ACC-ROBOTS-UNAVAILABLE", "finding",
         urls=[snap["requested_url"] + "/robots.txt"],
         observations={"http_status": robots.get("http_status"),
-                      "recorded_attempts": 1,
+                      "recorded_attempts": attempts,
                       "consecutive_5xx_rule": "2+ required for high/high"},
         evidence_quality="direct-measurement",
         candidate=candidate(

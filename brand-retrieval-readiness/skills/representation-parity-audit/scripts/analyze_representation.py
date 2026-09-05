@@ -114,7 +114,7 @@ def analyze(pages):
         ev = ("Sampled %d pages; %d client-rendered shell%s whose main content is absent "
               "from the raw response (indicators on %s: %s; %d visible words vs %d raw bytes)."
               % (len(pages), k, "" if k == 1 else "s",
-                 ex["requested_url"], "; ".join(ex[1]),
+                 ex[0]["requested_url"], "; ".join(ex[1]),
                  len((ex[0].get("visible_text") or "").split()),
                  len(ex[0].get("raw_html") or "")))
         results.append({

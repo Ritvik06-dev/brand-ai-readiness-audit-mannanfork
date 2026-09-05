@@ -56,7 +56,7 @@ PRICE_RE = re.compile(r"(?:[$\u20ac\u00a3\u20b9]\s?\d[\d,.]*)|(?:\b\d[\d,.]*\s?(
 DATE_RE = re.compile(r"\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2},?\s?(?:19|20)\d{2}\b|\b\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+(?:19|20)\d{2}\b|\b(?:19|20)\d{2}-\d{2}-\d{2}\b|\b\d{1,2}/\d{1,2}/(?:19|20)\d{2}\b|(?:(?:updated|modified|published|revised|last\s+(?:updated|modified|reviewed)|copyright|\u00a9|as\s+of)[^.\n]{0,40}?\b(?:19|20)\d{2}\b)", re.I)
 YEAR_RE = re.compile(r"\b(19|20)\d{2}\b")
 COUNT_RE = re.compile(r"\b\d[\d,.]*\+?\s+(?:customers|users|teams|companies|developers|downloads|installs|packages|modules|plugins|extensions|themes|pages|articles|posts|members|countries|enterprises|stars|reviews|questions|students|patients|locations|stores|recipes|episodes|issues|projects|skills)\b", re.I)
-PLAN_RE = re.compile(r"\b(?:Free|Starter|Basic|Standard|Pro|Professional|Premium|Team|Business|Enterprise|Growth|Scale|Plus|Advanced)\b(?:\s+plan)?")
+PLAN_RE = re.compile(r"\b(?:Free|Starter|Basic|Standard|Pro|Professional|Premium|Team|Business|Enterprise|Growth|Scale|Plus|Advanced)\b(?!(?:\s+(?:deviation|library|error|form)))(?:\s+plan)?")
 VERSION_RE = re.compile(r"\bv(?:ersion\s*)?\d+\.\d+(?:\.\d+)?\b|\b\d+\.\d+\.\d+\b", re.I)
 HOURS_RE = re.compile(r"\b\d{1,2}(?::\d{2})?\s?(?:am|pm)\s?(?:[-\u2013]\s?\d{1,2}(?::\d{2})?\s?(?:am|pm))?", re.I)
 PHONE_RE = re.compile(r"(?:\+\d{1,2}\s?)?(?:\(\d{3}\)|\d{3})[\s.-]\d{3}[\s.-]\d{4}\b")
@@ -279,7 +279,7 @@ class PageExtractor(HTMLParser):
         if tag == "img":
             alt = a.get("alt")
             self.images.append({"src": urljoin(self.base, a.get("src") or ""),
-                                "alt": alt, "alt_empty": alt == "",
+                                "alt": alt, "alt_empty": not (alt and alt.strip()),
                                 "width": a.get("width"), "height": a.get("height")})
         if tag in ("script", "style", "noscript", "template"):
             self.skip_depth += 1
@@ -441,6 +441,8 @@ def extract_claims(text, url, cap=30):
     for ctype, rx in CLAIM_PATTERNS:
         for m in rx.finditer(text):
             value = m.group(0)
+            if ctype == "count" and "." in value:
+                continue  # dotted numbers are section headings ('3.17. Users'), not counts
             key = (ctype, value)
             if key in seen:
                 continue
@@ -928,7 +930,7 @@ def _now():
 def discover_candidates(homepage_res, extractor, sitemap_urls, fetcher, base):
     candidates = []
     for sm_url in sitemap_urls[:2]:
-        sm = fetch_sitemap(fetcher, sm_url)
+        sm = fetch_sitemap(fetcher, urljoin(base, sm_url))
         if sm and sm.get("parse_ok") and sm.get("entries_count"):
             candidates = [e["url"] for e in sm["lastmod_sample"]]  # sample only; full list too big
             break
@@ -1020,7 +1022,7 @@ def run_collect(args):
     selected, labels, cluster_rows = select_pages([base] + candidates, args.max_pages)
     sitemap_summary = None
     if sitemap_urls:
-        sitemap_summary = fetch_sitemap(fetcher, sitemap_urls[0])
+        sitemap_summary = fetch_sitemap(fetcher, urljoin(base, sitemap_urls[0]))
     lastmod_by_url = {}
     if sitemap_summary and sitemap_summary.get("parse_ok"):
         for e in sitemap_summary.get("lastmod_sample", []):
