@@ -1155,7 +1155,15 @@ def run_passages(args):
             ex.close()
             ex.finalize()
             want = " ".join(q["candidate_passage"].split())
-            contiguous = any(want and want in " ".join(b.split()) for b in ex.blocks)
+            blocks = [" ".join(b.split()) for b in ex.blocks]
+            contiguous = any(want and want in b for b in blocks)
+            if not contiguous and want:
+                # scroll-to-text range fragments match across consecutive block
+                # boundaries; a two-adjacent-block span still highlights
+                contiguous = any(want in (blocks[i] + " " + blocks[i + 1])
+                                 for i in range(len(blocks) - 1))
+                if contiguous:
+                    note = "passage spans two adjacent blocks (still fragment-highlightable)"
             if not contiguous:
                 note = "passage not found verbatim within any single text block"
         results.append({"question_id": q["question_id"], "page_url": q.get("expected_page"),
