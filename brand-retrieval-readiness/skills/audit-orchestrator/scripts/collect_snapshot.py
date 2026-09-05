@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """collect_snapshot.py - build the shared evidence snapshot for one audit.
 
-The ONLY component in the marketplace that performs network I/O (PHASE1_REVIEW
-3.3). Reads: one URL (or, in --passages mode, an existing snapshot plus
-audit/passages.json). Writes: audit/snapshot.json, audit/excerpts/<skill>.json,
+The ONLY component in the marketplace that performs network I/O. Reads: one URL
+(or, in --passages mode, an existing snapshot plus audit/passages.json). Writes: audit/snapshot.json, audit/excerpts/<skill>.json,
 and (passages mode) audit/passages_checked.json. Prints a small summary;
 never dumps page content to stdout.
 
@@ -12,7 +11,7 @@ Safety: GET/HEAD only, no credentials, no forms, scheme http/https only, ports
 link-local destinations rejected unless --allow-private, per-request timeout,
 bounded response bytes, one global deadline, serial requests (concurrency 1 <=
 cap 3). Robots-aware UA probes: homepage only, only when the probed token is
-allowed there (SECOND_REVIEW 2.8).
+allowed there.
 
 Stdlib only (Python 3.9+). Self-validates its output against
 references/snapshot_schema.json using the vendored validator from build_report.
@@ -1129,7 +1128,7 @@ def run_passages(args):
 
     # offsite prompt-set excerpt: the questions (with their source) plus the
     # snapshot's external presence; written here because the prompt set only
-    # exists after answer-coverage runs (GAMEPLAN 4.3).
+    # exists after answer-coverage runs.
     exc_dir = os.path.join(os.path.dirname(os.path.abspath(args.out)), "excerpts")
     os.makedirs(exc_dir, exist_ok=True)
     offsite = {

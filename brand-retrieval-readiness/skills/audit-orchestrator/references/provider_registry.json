@@ -1,7 +1,7 @@
 {
   "registry_version": "1.0.0",
   "last_verified": "2026-09",
-  "maintenance": "Every provider behavior a finding relies on must trace to the source URL in the same entry. Verification dates record when the source was checked (review sessions of 2026-09-03, archived in docs/). Re-verify all sources and dates before submission. Never encode undocumented product-to-backend mappings or GEO-vendor claims.",
+  "maintenance": "Every provider behavior a finding relies on must trace to the source URL in the same entry. Verification dates record when the source was checked (2026-09-03). Re-verify all sources and dates before submission. Never encode undocumented product-to-backend mappings or GEO-vendor claims.",
   "render_evidence": [
     {
       "surface": "google_ai_overviews_ai_mode",

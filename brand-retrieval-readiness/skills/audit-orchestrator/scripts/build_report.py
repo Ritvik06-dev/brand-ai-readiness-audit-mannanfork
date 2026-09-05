@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """build_report.py - merge specialist finding fragments into the final audit report.
 
-Phase 1 stub (BUILD_PLAN G1, redefined per PHASE1_REVIEW section 6): fragment(s)
-in, schema-validated report out. Full root-cause dedup, never-claim lint, and
-the composed human summary land in Phase 2.
+Contract gate G1: fragment(s) in, schema-validated report out. Root-cause
+dedup, never-claim lint, coverage backfill, and the composed human summary are
+active.
 
 Stdlib only. Schema validation uses the vendored draft-07 subset validator below
 because `jsonschema` is NOT in the standard library and the judge's machine gets
