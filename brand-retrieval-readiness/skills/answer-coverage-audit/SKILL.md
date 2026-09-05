@@ -36,7 +36,9 @@ gap between them is where the findings and the opportunities live.
 - The snapshot's `site_type` (recorded in the snapshot; the orchestrator relays it).
 - Archetype applicability: `references/question_archetypes.md`.
 - Runtime contract: one read, one judgment, one write — at most 3 tool calls. Emit partial
-  findings with `not_evaluated` rather than exceed it.
+  findings with `not_evaluated` rather than exceed it. Judge from the excerpt — it carries
+  everything rated to this skill's checks; re-reading the full snapshot duplicates work the
+  scripts already did.
 
 ## Procedure
 
@@ -105,5 +107,8 @@ gap between them is where the findings and the opportunities live.
 - `audit/passages.json` (for the `--passages` post-step) and the finding fragment
   (excerpts_schema `passages_file` shape; fragment per
   `../audit-orchestrator/references/finding_fragment.json`, including its `opportunities[]`).
-- Never assign `F-` ids; the orchestrator does. State in your summary which questions were
+- Never assign `F-` ids; the orchestrator does. Done means valid: the fragment parses as
+  JSON and matches `finding_fragment.json` before handoff (`python3 -m json.tool <fragment>`
+  suffices) — an unvalidated fragment is not a handoff. Building it programmatically (e.g.
+  `json.dump`) avoids the most common failure here. State in your summary which questions were
   market-derived so the offsite probe set inherits the right phrasing.

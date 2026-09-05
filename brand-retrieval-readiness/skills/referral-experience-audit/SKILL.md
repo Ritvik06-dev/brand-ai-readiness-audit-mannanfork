@@ -37,7 +37,9 @@ visitor, judged here because they land on the citation).
   (`note`: "price split across spans", "inside collapsed details").
 - Snapshot context relayed when needed: image dimensions and inline render-blocking hints.
 - Runtime contract: one read round (the excerpt + passages_checked), one judgment, one write —
-  at most 3 tool calls; partial findings with `not_evaluated` over overrun.
+  at most 3 tool calls; partial findings with `not_evaluated` over overrun. Judge from the
+  excerpt — it carries everything rated to this skill's checks; re-reading the full snapshot
+  duplicates work the scripts already did.
 
 ## Procedure
 
@@ -106,5 +108,8 @@ visitor, judged here because they land on the citation).
 
 - The finding fragment to the orchestrator's `audit/findings/` path, shaped by
   `../audit-orchestrator/references/finding_fragment.json`. Never assign `F-` ids; the
-  orchestrator does. In your summary, name which family each finding belongs to so the report
+  orchestrator does. Done means valid: the fragment parses as JSON and matches
+  `finding_fragment.json` before handoff (`python3 -m json.tool <fragment>` suffices) — an
+  unvalidated fragment is not a handoff. Building it programmatically (e.g. `json.dump`)
+  avoids the most common failure here. In your summary, name which family each finding belongs to so the report
   can order continuation failures before generic friction.

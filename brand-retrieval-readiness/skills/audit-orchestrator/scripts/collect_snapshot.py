@@ -1238,6 +1238,9 @@ def run_passages(args):
     passages = load_json(args.passages)
     if passages.get("kind") != "passages":
         fail("--passages file must be a passages file (kind=passages)", [])
+    if not isinstance(passages.get("questions"), list) or not passages["questions"]:
+        fail("--passages file has no questions[]: answer-coverage wrote no prompt set "
+             "(expected key 'questions', not 'passages'); fix passages.json and re-run", [])
     by_url = {p["requested_url"]: p for p in snapshot["pages"]}
     results = []
     for q in passages.get("questions", []):

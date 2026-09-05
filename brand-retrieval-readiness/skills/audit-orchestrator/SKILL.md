@@ -1,6 +1,6 @@
 ---
 name: audit-orchestrator
-description: Audit a website for AI-discoverability and on-site-engagement problems and emit a single evidence-backed audit report. Use when asked to audit a site or domain, or to diagnose why a brand is hard to find or misrepresented in AI assistants, or why visitors who arrive do not engage. The sole entrypoint of this marketplace; composes the six specialist skills in manifest order.
+description: Audit a website for AI-discoverability and on-site-engagement problems and emit a single evidence-backed audit report. Use when asked to audit a site or domain, or to diagnose why a brand is hard to find or misrepresented in AI assistants, or why visitors who arrive do not engage. The sole entrypoint of this marketplace; composes the seven specialist skills in manifest order.
 license: MIT
 compatibility: Requires Python 3.9+ (standard library only) and outbound HTTPS. A headless browser is optional and only raises confidence on render checks.
 allowed-tools: Bash Read Write Grep
@@ -30,6 +30,21 @@ All artifacts go to a working directory `./audit/`: `snapshot.json`, `excerpts/`
 `passages.json`, `passages_checked.json`, `report.json`. Create it as needed and run scripts
 from there with explicit paths.
 
+## Paths (resolve these before step 2 — a wrong base breaks every path below)
+
+- `<orchestrator>` = the directory containing this SKILL.md (the audit-orchestrator skill
+  folder). Every `<orchestrator>/scripts/...` and `<orchestrator>/references/...` path below
+  starts here.
+- `MARKETPLACE_ROOT` = the directory containing `marketplace.json`. It is the PARENT of the
+  `skills/` directory (or `.agents/skills/`) — never inside a skill folder, so never look for
+  `marketplace.json` under `skills/<anything>/`. Probe in order from your working directory:
+  `./marketplace.json`, then `./.agents/marketplace.json`, then walk up toward the filesystem
+  root checking each level for both names; then the composition fallback chain below.
+- Relative paths quoted inside a specialist's SKILL.md (e.g.
+  `../audit-orchestrator/scripts/...`) resolve from THAT SPECIALIST's own directory. When you
+  run from anywhere else, build the path as `MARKETPLACE_ROOT` + that skill's manifest `path`
+  instead of guessing.
+
 ## Budgets (hard)
 
 - **Network:** `collect_snapshot.py` enforces a 120 s deadline, 8 s per request, serial
@@ -54,7 +69,9 @@ from there with explicit paths.
 2. **Classify and declare.** Conservatively classify the site (multiple allowed, max 3):
    `saas, ecommerce, local-business, docs-developer, publisher, gov-edu, marketplace-platform,
    org-portfolio` — this gates page sampling, question archetypes, in-scope claim types, and
-   which checks apply. Declare the capabilities you actually have as comma-separated flags.
+   which checks apply. Heuristics: a shop selling physical goods is `ecommerce` (not `saas`);
+   a company site describing services/work is `org-portfolio`. Declare only capabilities this
+   run will actually exercise as comma-separated flags.
    Then run:
    `python3 <orchestrator>/scripts/collect_snapshot.py --url <URL> --out ./audit/snapshot.json --site-type <types> --capabilities web_fetch[,web_search][,browser][,subagents]`
    Scripts take declared facts as flags and never probe for tools. It validates its own output,
@@ -62,7 +79,7 @@ from there with explicit paths.
    specialist. Read only the printed summary. If it reports unreachable or deadline problems,
    continue with what was captured and record it.
 
-3. **Enumerate specialists.** Resolve `MARKETPLACE_ROOT` (fallback chain below) and read
+3. **Enumerate specialists.** Resolve `MARKETPLACE_ROOT` (Paths above; fallback chain below) and read
    `marketplace.json`. Specialists run in **manifest order** (skip this entrypoint).
 
 4. **Scripted specialists** (access-discovery-audit, representation-parity-audit,
@@ -75,7 +92,12 @@ from there with explicit paths.
    skill's SKILL.md, either promote it to a finding with quoted evidence or leave it as a
    pass with the reason, and write the fragment back before step 6.
 
-5. **Judgment specialists** (in manifest order):
+5. **Judgment specialists** (in manifest order). Each fragment must validate against
+   `finding_fragment.json` before step 6 (each SKILL.md states the gate); the merge salvages
+   anything invalid to `not_evaluated` with a lint warning — a silent skill, never a failed audit.
+   Before authoring each specialist's fragment, read that specialist's SKILL.md; quote only
+   `check_id`s listed for it in `references/check_catalog.json` — ids outside the catalog do
+   not exist. Remove helper/scratch scripts from the working directory before step 6.
    - `answer-coverage-audit`: read `audit/excerpts/answer-coverage-audit.json` ONCE, follow its
      SKILL.md, write `audit/findings/answer-coverage-audit.json` AND `audit/passages.json`
      (questions from two sources: `site-derived` and `market-derived`; market-derived questions
@@ -101,10 +123,12 @@ from there with explicit paths.
    `coverage`, and every `not_evaluated` check explicitly — "not evaluated" is never a defect
    and never silently dropped.
 
-## Parallel dispatch (when the harness supports subagents)
+## Parallel dispatch (optional acceleration)
 
-If your environment can run subagents concurrently, dispatch each specialist as its own task —
-it is substantially faster and the audit is bounded at 5 minutes. Give each one: the
+Steps 4–5 above are the normative path and work in any harness: run the waves in order in
+this session. Where the harness supports concurrent subagents, the same waves dispatch
+one-specialist-per-subagent instead — substantially faster, and the audit stays bounded at
+5 minutes since specialists share no state. Give each one: the
 marketplace root, the snapshot path, its excerpt path, the path to its SKILL.md, and its output
 path. Require it to return ONLY a one-line status. Never the fragment contents, never page text.
 
@@ -114,15 +138,16 @@ path. Require it to return ONLY a one-line status. Never the fragment contents, 
 - **Wave 2 (needs wave 1):** referral-experience (needs passages_checked),
   offsite-visibility (needs the prompt set)
 
-If subagents are unavailable, run the same waves in order in this session. A specialist that
-fails or times out contributes `not_evaluated` entries. It never fails the audit.
+If subagents are unavailable — or a dispatched specialist fails or times out — that skill
+contributes `not_evaluated` entries. It never fails the audit.
 
 ## Composition fallback chain (resolving MARKETPLACE_ROOT)
 
 Try in order; use the first that works:
 
-1. Walk up from this skill's own directory until a directory containing `marketplace.json` is
-   found; specialists live at the manifest's declared paths.
+1. Walk up from `<orchestrator>` (Paths above: the folder holding this SKILL.md) until a
+   directory containing `marketplace.json` is found; specialists live at the manifest's
+   declared `path` values.
 2. Else, if sibling skill directories exist next to this skill (`../<specialist-id>/`), use
    them directly.
 3. Else, if the harness has the specialist skills installed by id, activate each by name and

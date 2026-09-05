@@ -39,6 +39,8 @@ invention.
   budget, variability rules. It binds everything below.
 - Runtime contract: one read, one judgment, one write — at most 3 tool calls. Off-site probes
   are the first thing shed at the deadline; an unrun probe is `not_evaluated`, never inferred.
+  Judge from the excerpt — it carries everything rated to this skill's checks; re-reading the
+  full snapshot duplicates work the scripts already did.
 
 ## Procedure
 
@@ -97,6 +99,9 @@ invention.
 
 - The finding fragment to the orchestrator's `audit/findings/` path, shaped by
   `../audit-orchestrator/references/finding_fragment.json`. Never assign `F-` ids; the
-  orchestrator does. Every recorded probe row appears in the relevant result's `observations`
+  orchestrator does. Done means valid: the fragment parses as JSON and matches
+  `finding_fragment.json` before handoff (`python3 -m json.tool <fragment>` suffices) — an
+  unvalidated fragment is not a handoff. Building it programmatically (e.g. `json.dump`)
+  avoids the most common failure here. Every recorded probe row appears in the relevant result's `observations`
   so the report's evidence is reconstructible. This skill carries no `opportunities[]` —
   market-derived demand with no answering page is answer-coverage's channel.

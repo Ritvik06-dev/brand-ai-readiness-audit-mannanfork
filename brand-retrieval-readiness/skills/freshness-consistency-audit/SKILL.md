@@ -34,7 +34,8 @@ conflicts are the measurable, on-site form of that failure.
   `page_dates` (structured dates per page + visible date claims).
 - Snapshot context relayed by the orchestrator when needed: `sitemap.lastmod_distinct_count`.
 - Runtime contract: one read, one judgment, one write — at most 3 tool calls; partial findings
-  with `not_evaluated` over overrun.
+  with `not_evaluated` over overrun. Judge from the excerpt — it carries everything rated to
+  this skill's checks; re-reading the full snapshot duplicates work the scripts already did.
 
 ## Procedure
 
@@ -89,5 +90,8 @@ conflicts are the measurable, on-site form of that failure.
 
 - The finding fragment to the orchestrator's `audit/findings/` path, shaped by
   `../audit-orchestrator/references/finding_fragment.json`. Never assign `F-` ids; the
-  orchestrator does. Report which pages supplied each side of every conflict so the
+  orchestrator does. Done means valid: the fragment parses as JSON and matches
+  `finding_fragment.json` before handoff (`python3 -m json.tool <fragment>` suffices) — an
+  unvalidated fragment is not a handoff. Building it programmatically (e.g. `json.dump`)
+  avoids the most common failure here. Report which pages supplied each side of every conflict so the
   remediation can name the source of truth.

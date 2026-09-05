@@ -181,6 +181,10 @@ def main():
                                      % (os.path.basename(frag_path), sid or "unknown skill"))
             continue
         skill_ids.add(frag["skill_id"])
+        if not frag.get("results") and not frag.get("not_evaluated"):
+            lint_warnings.append("fragment %s from %s is silent (0 results and 0 "
+                                 "not_evaluated): the specialist contributed nothing; its "
+                                 "checks are backfilled, not judged" % (frag_path, frag["skill_id"]))
         for result in frag.get("results", []):
             all_reported.add(result["check_id"])
             gate = result.get("gate")
