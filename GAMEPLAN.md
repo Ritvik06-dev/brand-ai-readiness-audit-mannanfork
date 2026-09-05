@@ -130,12 +130,16 @@ not a second fetch stack.
 
 ---
 
-## 4. The contract — fix before any Phase 2 code
+## 4. The contract — status and remaining gaps
 
-Phase 1 was committed but never exercised; the "G1 preliminary pass" commit was a one-line
-schema tweak. Running G1 by hand shows a realistic fragment **fails** the fragment schema.
+**Phases 1 and 2 are built** (commits `e25094d`, `8433d55`). G1 now passes for real under 3.9
+and 3.14: schemas load, the sample fragment validates, `build_report.py` converts it with the
+vendored validator, and routing, arithmetic, catalog join and `acceptance_test` preservation all
+check out. `collect_snapshot.py` is 1,152 lines; `check_catalog.json` holds 39 checks.
 
-### 4.1 Blocking defects
+§4.1 is retained as history. §4.6 is what is still open.
+
+### 4.1 Blocking defects — RESOLVED in `e25094d`
 
 1. **`finding_fragment.json` rejects `acceptance_test`.** `candidate_finding.suggested_action`
    is `additionalProperties: false` with only `summary` and `priority`. The specialist is the
@@ -188,7 +192,11 @@ results; freshness gets sitemap dates; offsite gets the prompt set).
 `passages.json`: `questions[]` with `question_id`, `question`, `source` (`site-derived` |
 `market-derived`), `expected_page`, `candidate_passage` verbatim, `qualifier_present`.
 
-### 4.4 Snapshot gaps
+### 4.4 Snapshot gaps — mostly landed
+
+`external_presence[]`, the `sitemap` object with `lastmod_distinct_count`, and the widened
+`claim_index` (now includes `phone`, `address`) are in. `site_type` and `capabilities.subagents`
+are not — see §4.6.
 
 - **`site_type`** — absent entirely, and it is the Generalization rubric line. Classify
   conservatively (multiple allowed): saas, ecommerce, local-business, docs-developer,
@@ -210,7 +218,9 @@ results; freshness gets sitemap dates; offsite gets the prompt set).
 - `hreflang` becomes `{lang, href}[]`. `affected_surfaces` becomes an enum. Add
   `report_schema_version` to the report root.
 
-### 4.5 Registry corrections
+### 4.5 Registry corrections — partly landed
+
+`claude_training` renamed and the Bing URL added. The `verified_in` pointers are not — see §4.6.
 
 - Rename `claude_retrieval` → `claude_training`. ClaudeBot is the training bot per the
   registry's own `crawler_roles`. Keep `claude_search` at medium (undocumented).
@@ -222,6 +232,35 @@ results; freshness gets sitemap dates; offsite gets the prompt set).
   audit → high/high; a single one → `needs_verification`.
 - Replace every `verified_in: "SECOND_REVIEW.md …"` with the source URL plus verification date.
   Shipped artifacts must not point at unshipped documents.
+
+### 4.6 Still open — do these before Phase 3 specialists are drafted
+
+Verified against the tree on 2026-09-05:
+
+1. **`site_type` is absent from the snapshot schema.** It is the Generalization rubric line and
+   four things depend on it: page sampling, question archetypes, claim types in scope, and which
+   checks apply at all. A clinic's decision facts are hours, address and booking, not pricing
+   tiers. Add the enum (saas, ecommerce, local-business, docs-developer, publisher, gov-edu,
+   marketplace-platform, org-portfolio), allow multiple, and have the collector record the
+   agent's classification.
+2. **`capabilities.subagents` is absent.** Needed by §5.4 so `coverage` records whether parallel
+   dispatch was used.
+3. **`check_catalog.json` has no `pattern_template` or `evidence_template`.** It has
+   `negative_control`, which is the harder half. But the templates are the guardrail against
+   incident-shaped findings (§6.1), and Phase 3-4 hands seven skills to parallel agents who will
+   otherwise each invent their own phrasing. Add both fields to all 39 entries.
+4. **16 `verified_in: "SECOND_REVIEW.md …"` pointers remain in `provider_registry.json`.** That
+   file now lives in `docs/` and never ships. Replace each with the source URL plus a
+   verification date. A shipped artifact must not reference an unshipped document.
+5. **Two renames not applied:** `answerability-audit` → `answer-coverage-audit` (with the
+   two-source prompt set), and `offsite-visibility-audit` does not exist yet. Both change
+   `marketplace.json`, the catalog's `skill_id` values, and the `finding_fragment` enum.
+6. **Catalog coverage is uneven.** answerability has 3 checks and freshness 4, against 11 for
+   access. That is backwards relative to where the differentiation lives — the semantic checks
+   are the headline (§1). Expect to add checks there as Phase 4 is drafted, subject to the
+   earn-a-check rule.
+7. **`tests/` holds `run_contract_tests.py` only.** The fixture server, the 10 fixtures and
+   `run_fixtures.py` from §2 are not built. That is Phase 5 and it is the kill-risk gate.
 
 ---
 
@@ -410,8 +449,9 @@ Working days. Agents implement; the named human owns the gate verdict.
 
 | Phase | Days | Content | Gate |
 |---|---|---|---|
-| **1 — Contract** | 1 | §4 in full: fragment fix, check catalog, excerpts schema, snapshot gaps, registry fixes, vendored validator | **G1** `tests/sample_fragment.json` validates; stub `build_report.py` converts it; output validates; arithmetic guard passes; all under Python 3.9. A gate that cannot fail is not a gate. |
-| **2 — Collector + spine** | 2 | `collect_snapshot.py` (all network I/O, probes, claim index, excerpts, `--passages`, `--capabilities`), `build_report.py`, orchestrator SKILL.md with §5.4 and §5.5 | **G2** two timed runs on a real site: scripts-only wall-clock, plus one real judgment pass timed and multiplied. If it blows 5 min, cut judgment scope now. |
+| ~~1 — Contract~~ | ✅ | done in `e25094d` | **G1 PASSED** under 3.9 and 3.14 |
+| ~~2 — Collector + spine~~ | ✅ | done in `8433d55`; G2a and G2b timed on a real site | **G2 PASSED** |
+| **2b — Gap close** | 0.5 | §4.6 items 1-5 | catalog templates present on all entries; renames applied; registry self-contained |
 | **3 — Scripted specialists** | 1.5 | access-discovery, representation-parity, entity-consistency. Parallel agents against frozen schemas. | **G3** fragments from a real site feed a clean report |
 | **4 — Judgment specialists** | 1.5 | answer-coverage, freshness-consistency, offsite-visibility, referral-experience. Parallel agents. | **G4** full 7-skill end-to-end, < 5 min measured, arithmetic clean |
 | **5 — Fixtures + FP gate** | 1.5 (overlaps 3-4) | fixture server, 10 fixtures with expected non-findings, FP control corpus of 8-10 clean sites incl. the SSR Next.js negative control | **G5 (kill-risk)** clean sites yield zero critical and ≤ 1-2 high. Fix gates before adding any check. |
@@ -504,13 +544,16 @@ become part-time.
 
 ## 14. Immediate next action
 
-Phase 1, in this order, then commit as "Phase 1: G1 passed":
+Phases 1 and 2 are done and both gates passed. Next is the half-day gap close in §4.6, then
+Phase 3.
 
-1. `finding_fragment.json` — allow `effort`, `owner`, `acceptance_test`
-2. `check_catalog.json` — ~30 entries with pattern and evidence templates and negative controls
-3. `excerpts_schema.json` — excerpts, passages, passages_checked
-4. `snapshot_schema.json` — `site_type`, widened `claim_index`, `sitemap`, headers, `external_presence[]`, `capabilities`, hreflang pairs
-5. `output_schema.json` — `affected_surfaces` enum, `report_schema_version`
-6. `provider_registry.json` — rename `claude_training`, add the Bing URL, replace `verified_in` with source URLs
-7. `severity_model.md` — rule 6 severity; add the pattern-level authoring rule
-8. `tests/sample_fragment.json` + stub `build_report.py` with the vendored validator; run G1 for real
+1. `snapshot_schema.json` — add `site_type` and `capabilities.subagents`
+2. `check_catalog.json` — add `pattern_template` and `evidence_template` to all 39 entries
+3. `provider_registry.json` — replace the 16 `verified_in` pointers with source URLs and dates
+4. Rename `answerability-audit` → `answer-coverage-audit`; create `offsite-visibility-audit`;
+   update `marketplace.json`, the catalog `skill_id` values and the `finding_fragment` enum
+5. Re-run `tests/run_contract_tests.py` under both interpreters; commit
+6. Then Phase 3: the three scripted specialists, in parallel, against the frozen schemas
+
+The six specialist SKILL.md files are still 27-29 line stubs. They are the artifact the judges
+read first (§1, novelty pass), so budget real writing time, not a generation pass.
