@@ -136,12 +136,13 @@ from there with explicit paths.
    is never a defect and never silently dropped. After a valid report: stop. No further
    verification passes.
 
-## Parallel dispatch (optional acceleration)
+## Dispatch (parallel first, serial fallback)
 
-Steps 4–5 above are the normative path and work anywhere: run the waves in order in
-this session. Where the harness can run work concurrently, the same waves can fan out —
-substantially faster, since specialists share no state and only read the snapshot plus
-their own excerpt.
+Where the harness can run work concurrently, fan out the waves below — one task per
+specialist — instead of running steps 4–5 inline. Specialists share no state and only
+read the snapshot plus their own excerpt, so fan-out is substantially faster with
+identical inputs and outputs. Where concurrent work is unavailable, run the same waves
+in order in this session.
 
 Hand each delegated task its snapshot path, excerpt path, SKILL.md path, and output path,
 and require back a one-line status only — never fragment contents, never page text. Two
