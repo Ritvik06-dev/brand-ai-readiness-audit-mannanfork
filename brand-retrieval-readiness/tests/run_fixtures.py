@@ -60,7 +60,7 @@ def unit_checks():
     """No-server checks: confusable folding, --passages edge cases, --fix."""
     fails = []
     sys.path.insert(0, os.path.join(ORCH, "scripts"))
-    from collect_snapshot import _fold_confusables, run_passages, build_excerpts
+    from collect_snapshot import _fold_confusables, run_passages, build_excerpts, FRAGMENT_SHAPE
     from types import SimpleNamespace
     if _fold_confusables("2026–27 ‘quoted’\u00a0x") != "2026-27 'quoted' x":
         fails.append("fold confusables mismatch")
@@ -213,6 +213,60 @@ def unit_checks():
     if len(w) != 2 or w[0]["window_offset"] != 0 or w[0]["headline"] != "Plans" \
             or w[0]["overlay_present"] is not False:
         fails.append("screen_windows wrong: %r" % (w,))
+    fs = json.load(open(os.path.join(ORCH, "references", "finding_fragment.json")))
+    ex = json.load(open(os.path.join(ORCH, "references", "excerpts_schema.json")))
+    shape = FRAGMENT_SHAPE
+    def _enum(*path):
+        node = fs
+        for part in path:
+            node = node[part]
+        return sorted(node.get("enum", []))
+    expect = {
+        "severity_enum": _enum("definitions", "severity"),
+        "confidence_enum": _enum("definitions", "confidence"),
+        "evidence_quality_enum": _enum("definitions", "evidence_quality"),
+        "gate_enum": _enum("definitions", "check_result", "properties", "gate"),
+        "mode_enum": _enum("properties", "mode"),
+        "priority_enum": _enum("definitions", "check_result", "properties",
+                                "candidate_finding", "properties",
+                                "suggested_action", "properties", "priority"),
+        "effort_enum": _enum("definitions", "check_result", "properties",
+                              "candidate_finding", "properties",
+                              "suggested_action", "properties", "effort"),
+        "source_enum": sorted(ex["definitions"]["question"]["properties"]["source"]["enum"]),
+        "intent_enum": sorted(ex["definitions"]["question"]["properties"]["intent"]["enum"]),
+        "affected_surfaces_enum": _enum("definitions", "check_result", "properties",
+                                         "candidate_finding", "properties",
+                                         "affected_surfaces", "items"),
+    }
+    for key, want in expect.items():
+        if sorted(shape.get(key, [])) != want:
+            fails.append("shape %s drifted from schema: %r" % (key, sorted(shape.get(key, []))))
+    if shape.get("passages_required") != ["question_id", "question", "source", "expected_page"]:
+        fails.append("shape passages_required drifted")
+    ph_server, ph_url = start({
+        "robots": {"status": 404, "body": ""},
+        "pages": {"/": {"status": 200, "headers": {},
+                        "body": "<html><head><title>Phi</title></head><body><p>Phi page.</p></body></html>"}},
+        "missing_path": None})
+    try:
+        ph_work = tempfile.mkdtemp(prefix="fx-phase1-")
+        ph_out = os.path.join(ph_work, "phi")
+        p = run([sys.executable, os.path.join(ORCH, "scripts", "run_phase1.py"),
+                 "--url", ph_url, "--out-dir", ph_out, "--site-type", "saas",
+                 "--capabilities", "web_fetch", "--allow-private", "--max-pages", "1"])
+        if p.returncode != 0:
+            fails.append("run_phase1 exited %d: %s" % (p.returncode, (p.stdout or "")[-200:]))
+        elif not os.path.exists(os.path.join(ph_out, "snapshot.json")):
+            fails.append("run_phase1 wrote no snapshot")
+        else:
+            frags = [f for f in os.listdir(os.path.join(ph_out, "findings")) if f.endswith(".json")]
+            if len(frags) != 3:
+                fails.append("run_phase1 wrote %d fragments, expected 3" % len(frags))
+            if "phase1 status:" not in (p.stdout or ""):
+                fails.append("run_phase1 printed no status table")
+    finally:
+        stop(ph_server)
     return fails
 
 

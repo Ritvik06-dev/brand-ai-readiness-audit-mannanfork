@@ -91,11 +91,16 @@ from there with explicit paths.
 3. **Enumerate specialists.** Resolve `MARKETPLACE_ROOT` (Paths above; fallback chain below) and read
    `marketplace.json`. Specialists run in **manifest order** (skip this entrypoint).
 
-4. **Scripted specialists** (access-discovery-audit, representation-parity-audit,
-   entity-consistency-audit): run the script named in that skill's SKILL.md with
-   `--snapshot ./audit/snapshot.json --out ./audit/findings/<skill-id>.json`. Read only its
-   printed summary. If a specialist cannot be resolved, note it and continue. If a referenced script file is
-   absent, say so explicitly and treat that skill as not_evaluated — never invent its output.
+4. **Phase 1 (one call).** Run:
+   `python3 <orchestrator>/scripts/run_phase1.py --url <URL> --out-dir ./audit --site-type <types> --capabilities <flags>`
+   It builds the snapshot, runs the three scripted specialists (access-discovery,
+   representation-parity, entity-consistency), validates their fragments, and prints one
+   status table — read only that table. Exit nonzero means the snapshot itself failed: read
+   its notes, continue with any partial capture, record it. A specialist row marked
+   missing/failed contributes `not_evaluated` — never invent its output. If the runner file
+   is absent, run the three scripts individually with
+   `--snapshot ./audit/snapshot.json --out ./audit/findings/<skill-id>.json` (script named in
+   each skill's SKILL.md).
    Then **complete semantic gates**: reopen each fragment once (fragments are small JSON —
    this is not the snapshot) and finish any result carrying `gate: "pass"` with
    `evidence_quality: "semantic-judgment"` — currently `ENT-AMBIGUOUS-NAME`: follow that
