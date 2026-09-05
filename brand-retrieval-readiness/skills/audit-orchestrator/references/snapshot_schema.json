@@ -204,7 +204,7 @@
             "properties": {
               "variant": { "enum": ["http", "www", "apex"] },
               "requested": { "type": "string" },
-              "final_path": { "type": "string" },
+              "final_path": { "type": ["string", "null"], "description": "null when the variant could not be resolved at all" },
               "path_preserved": { "type": ["boolean", "null"] }
             }
           }

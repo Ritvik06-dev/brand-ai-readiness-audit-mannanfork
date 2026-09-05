@@ -131,10 +131,13 @@ def fail(what, errs):
 def main():
     ap = argparse.ArgumentParser(
         description="Merge specialist finding fragments into the final audit report.")
-    ap.add_argument("--fragment", action="append", required=True,
+    ap.add_argument("--fragment", action="append", default=[],
                     help="finding fragment JSON file; repeatable")
     ap.add_argument("--site", required=True, help="audited host, e.g. example.com")
     ap.add_argument("--out", required=True, help="output report path")
+    ap.add_argument("--snapshot", help="optional snapshot.json - fills coverage from it")
+    ap.add_argument("--degraded", action="store_true",
+                    help="single-skill degraded mode: no specialist fragments resolved")
     ap.add_argument("--marketplace-version", default="1.0.0")
     args = ap.parse_args()
 
@@ -152,6 +155,7 @@ def main():
     needs_verification = []
     not_evaluated = []
     skill_ids = set()
+    all_reported = set()
     for frag_path in args.fragment:
         frag = load_json(frag_path)
         errs = validate(frag, frag_schema)
@@ -159,6 +163,7 @@ def main():
             fail("fragment %s does not validate against finding_fragment.json" % frag_path, errs)
         skill_ids.add(frag["skill_id"])
         for result in frag.get("results", []):
+            all_reported.add(result["check_id"])
             gate = result.get("gate")
             if gate == "pass":
                 continue
@@ -199,10 +204,11 @@ def main():
             else:
                 findings.append(entry)
         for ne in frag.get("not_evaluated", []):
+            all_reported.add(ne["check_id"])
             not_evaluated.append({"check_id": ne["check_id"], "reason": ne["reason"]})
 
     # Catalog resolution lint: no invented check ids anywhere.
-    used_ids = set()
+    used_ids = set(all_reported)
     for f in findings:
         used_ids.add(f["check_id"])
     for ne in not_evaluated:
@@ -211,6 +217,37 @@ def main():
     if unknown:
         fail("check_ids not present in check_catalog.json",
              ["%s: invented id" % u for u in unknown])
+
+    # Coverage backfill: every catalog check no fragment reported lands in
+    # not_evaluated, so the report's coverage claim is complete and honest.
+    for c in catalog["checks"]:
+        if c["check_id"] not in used_ids:
+            not_evaluated.append({"check_id": c["check_id"],
+                                  "reason": "no result reported by %s" % c["skill_id"]})
+
+    # Root-cause dedup (Phase 2 scope): merge exact duplicates, then one
+    # documented correlation cluster - client-shell symptoms share one mechanism.
+    # known: single hardcoded correlation; generalize via catalog fields if more emerge
+    seen_exact = set()
+    deduped = []
+    for f in findings:
+        key = (f["check_id"], tuple(sorted(f.get("affected_urls", []))))
+        if key in seen_exact:
+            continue
+        seen_exact.add(key)
+        deduped.append(f)
+    findings = deduped
+    primary = next((f for f in findings if f["check_id"] == "REP-KEY-FACT-LOSS"), None)
+    if primary:
+        absorbed = [f for f in findings
+                    if f["check_id"] in ("REP-LINKS-SCRIPT-ONLY", "REP-EXTRACTION-LOSS")
+                    and set(f.get("affected_urls", [])) & set(primary.get("affected_urls", []))]
+        if absorbed:
+            urls = sorted({u for f in absorbed for u in f.get("affected_urls", [])})
+            primary["evidence"] += (" Correlated same-root-cause symptoms: %s on %s."
+                                    % (", ".join(sorted({f["check_id"] for f in absorbed})),
+                                       ", ".join(urls) if urls else "the same pages"))
+            findings = [f for f in findings if f not in absorbed]
 
     # Severity-then-check_id stable sort, then id assignment (orchestrator-only duty).
     findings.sort(key=lambda f: (SEVERITY_ORDER[f["severity"]], f["check_id"]))
@@ -247,29 +284,44 @@ def main():
         fail("arithmetic guard", ["total_findings != len(findings)"])
 
     now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    coverage = {
+        "specialists_resolved": 0 if args.degraded else len(skill_ids),
+        "specialists_requested": 6,
+        "capabilities_unavailable": [],
+    }
+    if args.snapshot and os.path.exists(args.snapshot):
+        snap = load_json(args.snapshot)
+        coverage["pages_discovered"] = snap["discovery"]["candidates_count"]
+        coverage["pages_selected"] = len(snap["discovery"]["selected"])
+        coverage["raw_fetches_succeeded"] = len(snap["pages"])
+        coverage["rendered_pages"] = 0
+        browser_ok = snap["capabilities"]["browser_available"]
+        coverage["browser_available"] = browser_ok
+        if not browser_ok:
+            coverage["capabilities_unavailable"].append("browser")
+    limitations = (["Single-skill degraded mode: no specialist fragments were available;"
+                    " specialists_resolved = 0 and the judgment checks are not_evaluated."]
+                   if args.degraded else [])
+    limitations.append("The opportunities[] proactive set lands with the remediation"
+                       " playbook (Phase 5 per BUILD_PLAN.md).")
     report = {
         "site": args.site,
         "audited_at": now,
         "audit_status": "complete",
         "report_schema_version": "1.0",
         "marketplace_version": args.marketplace_version,
-        "coverage": {
-            "specialists_resolved": len(skill_ids),
-            "specialists_requested": 6,
-            "capabilities_unavailable": [],
-        },
+        "coverage": coverage,
         "summary": summary,
         "findings": ordered,
         "opportunities": [],
         "needs_verification": needs_verification,
         "not_evaluated": not_evaluated,
-        "limitations": [
-            "Phase 1 stub: root-cause dedup, never-claim lint, and the composed"
-            " human summary land in Phase 2 (BUILD_PLAN.md).",
-        ],
+        "limitations": limitations,
         "lint_warnings": [],
-        "human_summary": _human_summary(args.site, ordered, needs_verification),
+        "human_summary": _human_summary(args.site, ordered, needs_verification,
+                                        not_evaluated),
     }
+    report["lint_warnings"] = lint_report(report)
 
     errs = validate(report, out_schema)
     if errs:
@@ -283,14 +335,50 @@ def main():
                                   len(not_evaluated)))
 
 
-def _human_summary(site, findings, needs_verification):
-    lines = ["Audit of %s: %d finding(s)." % (site, len(findings))]
-    for f in findings:
-        lines.append("- [%s] %s -> %s" % (f["severity"].upper(), f["title"],
-                                          f["suggested_action"]["summary"]))
+FORBIDDEN_PATTERNS = [
+    (r"\bFAQPage\b", "recommends FAQPage schema (retired for rich results; plain-HTML Q&A is the fix)"),
+    (r"\bHowTo\b", "recommends HowTo schema (retired)"),
+    (r"llms\.txt.{0,80}(rank|discover|citation|visibility)", "frames llms.txt as a discoverability/ranking factor"),
+    (r"\b(CLS|LCP|INP)\b[^.]{0,40}\d", "reads like a synthesized Core Web Vital"),
+    (r"\bguarantee", "states a guarantee"),
+    (r"\bwill (rank|be cited|appear)", "predicts a specific ranking/citation outcome"),
+    (r"\bIndexNow\b", "IndexNow receipt does not guarantee indexing or citation"),
+]
+
+
+def lint_report(report):
+    """Never-claim lint: WARN only, never fails - quoted evidence or the site's
+    own prose can legitimately contain trigger strings (PHASE1 fix, build review)."""
+    warnings = []
+    fields = [("finding.title", f["title"]) for f in report["findings"]]
+    fields += [("finding.suggested_action", f["suggested_action"]["summary"])
+               for f in report["findings"]]
+    fields += [("opportunity.title", o["title"]) for o in report.get("opportunities", [])]
+    fields += [("human_summary", report.get("human_summary", ""))]
+    for field, text in fields:
+        for pattern, why in FORBIDDEN_PATTERNS:
+            if re.search(pattern, text, re.I):
+                warnings.append("%s: %s (warning only - verify in context)" % (field, why))
+    return warnings
+
+
+def _human_summary(site, findings, needs_verification, not_evaluated):
+    lines = ["Audit of %s: %d finding(s). Fix in this order:" % (site, len(findings))]
+    for i, f in enumerate(findings, 1):
+        action = f["suggested_action"]
+        bits = ["effort: %s" % action.get("effort", "?")]
+        if action.get("owner"):
+            bits.append("owner: %s" % action["owner"])
+        lines.append("%d. [%s] %s" % (i, f["severity"].upper(), f["title"]))
+        lines.append("   Fix: %s (%s)" % (action["summary"], ", ".join(bits)))
+        if action.get("acceptance_test"):
+            lines.append("   Verify: %s" % action["acceptance_test"])
     if needs_verification:
         lines.append("%d item(s) need verification before they can be called defects."
                      % len(needs_verification))
+    if not_evaluated:
+        lines.append("%d check(s) were not evaluated - reasons are in the report;"
+                     " 'not evaluated' is not a defect." % len(not_evaluated))
     return "\n".join(lines)
 
 
