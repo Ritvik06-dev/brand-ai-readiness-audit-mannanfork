@@ -107,6 +107,6 @@ invention.
   `../audit-orchestrator/references/finding_fragment.json`. Never assign `F-` ids; the
   orchestrator does. Done means valid: the fragment parses as JSON and matches
   `finding_fragment.json` before handoff (`python3 <orchestrator>/scripts/validate_fragment.py <fragment>` (checks the schema, not just syntax)) — an
-  unvalidated fragment is not a handoff. Building it programmatically (e.g. `json.dump`). If writing JSON through a shell heredoc instead, quote the delimiter (`<<'EOF'`). Every recorded probe row appears in the relevant result's `observations`
+  unvalidated fragment is not a handoff. If INVALID, run `validate_fragment.py --fix <fragment>` first; hand-edit only what it cannot correct. Build the fragment programmatically (`python3` + `json.dump`), never in a shell heredoc — heredoc brace errors surface only as 'unreadable' at validation, costing a full rewrite turn. Every recorded probe row appears in the relevant result's `observations`
   so the report's evidence is reconstructible. This skill carries no `opportunities[]` —
   market-derived demand with no answering page is answer-coverage's channel.

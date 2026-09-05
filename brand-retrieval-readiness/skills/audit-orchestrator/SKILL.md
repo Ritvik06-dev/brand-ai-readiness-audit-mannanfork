@@ -79,7 +79,8 @@ from there with explicit paths.
    a company site describing services/work is `org-portfolio`. Classify from what the site
    sells or does — never from words in the domain string, which is not evidence. Do not fetch
    the site to classify; classify from the request context and confirm against the snapshot
-   summary. Declare only capabilities this
+   summary. Recorded here, frozen for the run — never revisited in judgments; genuine doubt
+   goes to `limitations`, not re-derivation. Declare only capabilities this
    run will actually exercise as comma-separated flags.
    Then run:
    `python3 <orchestrator>/scripts/collect_snapshot.py --url <URL> --out ./audit/snapshot.json --site-type <types> --capabilities web_fetch[,web_search][,browser][,subagents]`
@@ -131,7 +132,8 @@ from there with explicit paths.
      once, plus `audit/passages_checked.json`; write its fragment.
 
 6. **Report.** First validate every fragment in one pass (`validate_fragment.py` over each
-   file in `./audit/findings/`); fix any failure and re-validate before merging. Then run:
+   file in `./audit/findings/`); on INVALID run with `--fix` first and hand-edit only the
+   remainder, then re-validate before merging. Then run:
    `python3 <orchestrator>/scripts/build_report.py --site <host> --out ./audit/report.json --snapshot ./audit/snapshot.json --fragment ./audit/findings/<each>.json` (repeat `--fragment` once per fragment file; shell globs are not expanded).
    It assigns finding IDs, dedups root causes, backfills `not_evaluated`, lints forbidden
    claims, validates the report schema, and prints the human summary.

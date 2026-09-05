@@ -58,7 +58,9 @@ gap between them is where the findings and the opportunities live.
    Copy it as an exact substring of the excerpt — character for character, including dashes,
    quotes and punctuation; never join lines, paraphrase, or retype from memory. A retyped
    passage is a quoting defect, and the contiguity checker measures the site, not your quote.
-   Before writing, assert each `candidate_passage` is an exact substring of the excerpt.
+   The checker matches within single blocks or two adjacent blocks — assert substrings against
+   that granularity, not page text. Before writing, assert each `candidate_passage` is an exact
+   substring of the excerpt.
 3. **Write `audit/passages.json`** (excerpts_schema `passages_file`): shape literal
    `{"kind": "passages", "skill_id": "answer-coverage-audit", "questions": [...]}` — the
    array key is `questions`, never `passages`. Every question with its
@@ -125,6 +127,5 @@ gap between them is where the findings and the opportunities live.
   (excerpts_schema `passages_file` shape; fragment per
   `../audit-orchestrator/references/finding_fragment.json`, including its `opportunities[]`).
 - Never assign `F-` ids; the orchestrator does. Done means valid: the fragment parses as
-  JSON and matches `finding_fragment.json` before handoff (`python3 <orchestrator>/scripts/validate_fragment.py <fragment>` (checks the schema, not just syntax)) — an unvalidated fragment is not a handoff. Building it programmatically (e.g.
-  `json.dump`). If writing JSON through a shell heredoc instead, quote the delimiter (`<<'EOF'`). State in your summary which questions were
+  JSON and matches `finding_fragment.json` before handoff (`python3 <orchestrator>/scripts/validate_fragment.py <fragment>` (checks the schema, not just syntax)) — an unvalidated fragment is not a handoff. If INVALID, run `validate_fragment.py --fix <fragment>` first; hand-edit only what it cannot correct. Build the fragment programmatically (`python3` + `json.dump`), never in a shell heredoc — heredoc brace errors surface only as 'unreadable' at validation, costing a full rewrite turn. State in your summary which questions were
   market-derived so the offsite probe set inherits the right phrasing.
