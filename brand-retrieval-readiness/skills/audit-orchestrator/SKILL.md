@@ -127,7 +127,7 @@ from there with explicit paths.
 
 6. **Report.** First validate every fragment in one pass (`validate_fragment.py` over each
    file in `./audit/findings/`); fix any failure and re-validate before merging. Then run:
-   `python3 <orchestrator>/scripts/build_report.py --site <host> --out ./audit/report.json --snapshot ./audit/snapshot.json --fragment ./audit/findings/<each>.json`
+   `python3 <orchestrator>/scripts/build_report.py --site <host> --out ./audit/report.json --snapshot ./audit/snapshot.json --fragment ./audit/findings/<each>.json` (repeat `--fragment` once per fragment file; shell globs are not expanded).
    It assigns finding IDs, dedups root causes, backfills `not_evaluated`, lints forbidden
    claims, validates the report schema, and prints the human summary.
 

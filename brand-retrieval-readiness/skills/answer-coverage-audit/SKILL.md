@@ -56,6 +56,7 @@ gap between them is where the findings and the opportunities live.
    Copy it as an exact substring of the excerpt — character for character, including dashes,
    quotes and punctuation; never join lines, paraphrase, or retype from memory. A retyped
    passage is a quoting defect, and the contiguity checker measures the site, not your quote.
+   Before writing, assert each `candidate_passage` is an exact substring of the excerpt.
 3. **Write `audit/passages.json`** (excerpts_schema `passages_file`): shape literal
    `{"kind": "passages", "skill_id": "answer-coverage-audit", "questions": [...]}` — the
    array key is `questions`, never `passages`. Every question with its

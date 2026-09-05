@@ -394,7 +394,8 @@ def main():
                     " specialists_resolved = 0 and the judgment checks are not_evaluated."]
                    if args.degraded else [])
     limitations.extend(limitations_extra)
-    if snapshot_present and pages_selected == 0:
+    no_capture = (snapshot_present and pages_selected == 0) or (args.degraded and not snapshot_present)
+    if no_capture:
         limitations.append("No pages were captured (unreachable site or total capture failure); "
                            "runnable checks are not_evaluated and there is nothing to find.")
     limitations.append("The opportunities[] proactive set lands with the remediation"
@@ -402,7 +403,7 @@ def main():
     report = {
         "site": args.site,
         "audited_at": now,
-        "audit_status": ("partial" if snapshot_present and pages_selected == 0 else "complete"),
+        "audit_status": ("partial" if no_capture else "complete"),
         "report_schema_version": "1.0",
         "marketplace_version": args.marketplace_version,
         "coverage": coverage,
@@ -422,6 +423,8 @@ def main():
     if errs:
         fail("report does not validate against output_schema.json", errs)
 
+    out_dir = os.path.dirname(os.path.abspath(args.out))
+    os.makedirs(out_dir, exist_ok=True)
     with open(args.out, "w", encoding="utf-8") as fh:
         json.dump(report, fh, indent=2, ensure_ascii=False)
         fh.write("\n")
