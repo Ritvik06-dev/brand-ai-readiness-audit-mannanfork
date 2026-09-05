@@ -685,9 +685,8 @@ def check_sitemap_orphan(snap, pages):
             severity, "medium",
             "%d of %d sampled sitemap URLs have no internal link from any sampled page "
             "(example: %s); site has %s discovered candidates. Sample-limited evidence: "
-            "only %d sitemap URLs were sampled against %d sampled pages' links, so this "
-            "is a hypothesis for owner verification unless decision-class URLs (%d) are "
-            "orphaned." % (len(orphans), len(sample), orphans[0], candidates_count,
+            "only %d sitemap URLs were sampled against %d sampled pages' links; "
+            "orphaned decision-class URLs: %d." % (len(orphans), len(sample), orphans[0], candidates_count,
                            len(sample), len(pages), len(important_orphans)),
             "Important URLs that exist only in the sitemap but not in crawlable links "
             "depend entirely on sitemap discovery; surfaces that miss the sitemap never "

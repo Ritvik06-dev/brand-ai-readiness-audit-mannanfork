@@ -89,7 +89,10 @@ visitor, judged here because they land on the citation).
 
 - Titles follow each check's `pattern_template`; evidence follows `evidence_template` — counts
   with denominators and quotes ≤ 200 chars. Titles state site- or template-level patterns; the
-  specific landing is evidence, not the title.
+  specific landing is evidence, not the title. State probe observations in words (path and
+  status), never as field paths (`snapshot.*`, `*.is_soft_404`). When a finding shares its
+  root cause with another stage's check (fragment survival with REP-*, confirmation with
+  ANS-*), name the paired check_id in the evidence — one effect per stage, cited pairs.
 - When NOT to flag (negative controls), in plain words, per check:
   - REF-SOFT-404: nonexistent paths return 404/410 (then REF-404-DEAD-END judges the body).
   - REF-404-DEAD-END: the 404 page offers search, navigation, or suggestions.

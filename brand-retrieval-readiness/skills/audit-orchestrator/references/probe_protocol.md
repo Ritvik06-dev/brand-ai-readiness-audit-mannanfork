@@ -9,7 +9,9 @@ engines. It does not go stale because it names no tool.
 
 1. **Evidence not assertion.** A probe counts as run only when its observation is recorded:
    engine, exact query string, timestamp (UTC), and result. No record → the check is
-   `not_evaluated`, whatever the intent was.
+   `not_evaluated`, whatever the intent was. Probe findings carry an egress/time qualifier:
+   one run is one observation from the auditor egress at the recorded timestamp — edge
+   behavior varies by visitor context, so a probe row is never presented as universal.
 2. **Never a score.** A sample of prompts is an observation set, not a visibility score. One
    run is one observation. Findings are phrased per the check's `evidence_template` with the
    recorded probe rows as evidence — never as "the brand ranks Nth" or "visibility is X%".

@@ -88,7 +88,7 @@
       "pattern_template": "Automated retrieval traffic receives a challenge where browser traffic succeeds",
       "mechanism": "A bot challenge (WAF) served to retrieval-bot UAs but not browser UAs - distinguishable by differential status plus cf-mitigated headers and text/html content-type on non-HTML requests - blocks citation surfaces at the edge. Same-IP spoofed-UA evidence caps confidence at medium, so this check's practical severity ceiling is high (rule 1: critical requires high confidence).",
       "evidence_required": "direct-measurement",
-      "evidence_template": "{token} UA received {bot_status} with {signal} where browser UA received {browser_status} on the same path; challenged responses were {content_type}.",
+      "evidence_template": "{token} UA received {bot_status} with {signal} where browser UA received {browser_status} on the same path; challenged responses were {content_type}. Observed from the auditor egress at audit time; edge behavior varies by visitor context.",
       "severity_band": ["high", "critical"],
       "negative_control": "Challenge triggered only on abusive paths or absent for robots-allowed tokens; a same-IP differential is suspected edge behavior, capped at medium confidence (severity_model).",
       "affected_surfaces_default": ["chatgpt_search", "perplexity_retrieval", "claude_search", "bing_copilot"]
@@ -452,7 +452,7 @@
       "pattern_template": "The brand is absent from answers to the inferred prompt set on {engine}",
       "mechanism": "For prompts the site's own category implies, retrieval surfaces return answers without the brand - the demand exists and the site does not appear in it. One run is an observation, never a visibility score.",
       "evidence_required": "direct-measurement",
-      "evidence_template": "{k}/{n} recorded probes: engine={engine}, query='{query}', timestamp={timestamp}, brand absent.",
+      "evidence_template": "{k}/{n} recorded probes: engine={engine}, query='{query}', timestamp={timestamp}, brand absent. One run is one observation, auditor egress.",
       "severity_band": ["medium", "high"],
       "negative_control": "No search capability was declared, the prompt set is empty, or probes were shed at the deadline - the check is not_evaluated, never inferred from absence of evidence.",
       "affected_surfaces_default": []
@@ -465,7 +465,7 @@
       "pattern_template": "Third-party sources are cited where the official page exists",
       "mechanism": "Retrieval surfaces cite a third party (comparison site, directory, blog) instead of the brand's own page that answers the same question - the brand's voice is displaced in its own category.",
       "evidence_required": "direct-measurement",
-      "evidence_template": "{k}/{n} probes cite {third_party_domain} instead of {official_url} (engine={engine}, query='{query}', timestamp={timestamp}).",
+      "evidence_template": "{k}/{n} probes cite {third_party_domain} instead of {official_url} (engine={engine}, query='{query}', timestamp={timestamp}); one run is one observation, auditor egress.",
       "severity_band": ["medium", "high"],
       "negative_control": "No official page answers the question (that is ANS-QUESTION-UNANSWERED's cause, not this finding), or the third party is genuinely the better source for the prompt.",
       "affected_surfaces_default": []
@@ -478,7 +478,7 @@
       "pattern_template": "Retrieval surfaces state the brand's {fact_type} incorrectly",
       "mechanism": "The strongest case in the study: an answer states a fact about the brand that the brand's own page contradicts - misrepresentation the brand never wrote and cannot see.",
       "evidence_required": "direct-measurement",
-      "evidence_template": "engine={engine} states '{stated_value}' for {fact_type} (query='{query}', timestamp={timestamp}); the official page states '{official_value}' at {official_url}.",
+      "evidence_template": "engine={engine} states '{stated_value}' for {fact_type} (query='{query}', timestamp={timestamp}); the official page states '{official_value}' at {official_url}; one run is one observation, auditor egress.",
       "severity_band": ["high"],
       "negative_control": "The stated value matches the official page, or the official page is genuinely ambiguous/absent on the fact - ambiguous source material is an ANS finding, not an OFF misrepresentation.",
       "affected_surfaces_default": []
@@ -491,7 +491,7 @@
       "pattern_template": "Answers resolve the brand name to a different entity",
       "mechanism": "The prompt resolves to a different entity sharing the name (place, person, category term), confirming the mistaken-identity risk that ENT-AMBIGUOUS-NAME detects the on-site side of. Pair the findings; do not double-report the cause.",
       "evidence_required": "direct-measurement",
-      "evidence_template": "{k}/{n} probes returned {other_entity_description} for the brand query (engine={engine}, query='{query}', timestamp={timestamp}).",
+      "evidence_template": "{k}/{n} probes returned {other_entity_description} for the brand query (engine={engine}, query='{query}', timestamp={timestamp}); one run is one observation, auditor egress.",
       "severity_band": ["medium", "high"],
       "negative_control": "The probe output is unambiguous about the brand, or the ambiguity is already reported by ENT-AMBIGUOUS-NAME with its own evidence - report the on-site cause once and cite this as its observed effect.",
       "affected_surfaces_default": []
@@ -504,7 +504,7 @@
       "pattern_template": "Nonexistent paths return {status} instead of 404",
       "mechanism": "A nonexistent path returns 200 - a Google-recognized quality defect that admits junk URLs to indexes and turns mistyped/mangled AI citations into silent dead ends.",
       "evidence_required": "direct-measurement",
-      "evidence_template": "Probe {probe_path} returned {status}; a correct 404/410 was expected.",
+      "evidence_template": "Probe {probe_path} returned {status}; a correct 404/410 was expected. Observed from the auditor egress at audit time; edge behavior varies by visitor context.",
       "severity_band": ["high"],
       "negative_control": "Nonexistent paths return 404/410 with a useful body (see REF-404-DEAD-END for body quality).",
       "affected_surfaces_default": []
@@ -517,7 +517,7 @@
       "pattern_template": "404 responses offer no recovery path",
       "mechanism": "A real 404 body offers no search, navigation, or suggestions - a visitor arriving from a stale or mangled AI citation has nowhere to go.",
       "evidence_required": "direct-measurement",
-      "evidence_template": "The 404 body carries {body_signals} and lacks search, navigation, and suggestions.",
+      "evidence_template": "The 404 body carries {body_signals} and lacks search, navigation, and suggestions. Observed from the auditor egress at audit time.",
       "severity_band": ["medium"],
       "negative_control": "The 404 page provides search, navigation, or next-step suggestions.",
       "affected_surfaces_default": []
@@ -530,7 +530,7 @@
       "pattern_template": "Non-canonical host/scheme variants drop the deep path",
       "mechanism": "The http-to-https or www/apex variant redirects drop the path and dump the visitor on the homepage, so every citation of the non-canonical variant loses the answer entirely.",
       "evidence_required": "direct-measurement",
-      "evidence_template": "{variant} redirect of {requested_path} lands on {final_path} instead of preserving the path.",
+      "evidence_template": "{variant} redirect of {requested_path} lands on {final_path} instead of preserving the path. Observed from the auditor egress at audit time.",
       "severity_band": ["high"],
       "negative_control": "Variant redirects preserve the full path.",
       "affected_surfaces_default": []

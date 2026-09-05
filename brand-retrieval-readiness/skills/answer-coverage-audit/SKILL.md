@@ -92,7 +92,10 @@ gap between them is where the findings and the opportunities live.
 
 - Titles follow each check's `pattern_template`; evidence follows `evidence_template` — counts
   with denominators and quotes ≤ 200 chars with page URL and `char_offset`. Titles state
-  site-level patterns, never one question's story.
+  site-level patterns, never one question's story. When a finding shares its root cause with
+  another stage's check (comparison grids with REP-TABLE-SEMANTICS, qualifier scope with
+  FRS-*-CONFLICT), name the paired check_id in the evidence — one effect per stage, cited
+  pairs, never silent overlap.
 - When NOT to flag (negative controls), in plain words, per check:
   - ANS-QUESTION-UNANSWERED: the archetype does not apply to this site type — skip it; a
     market-derived question the site never claimed goes to `opportunities[]`, not findings;

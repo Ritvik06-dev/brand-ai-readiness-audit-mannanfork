@@ -389,12 +389,12 @@ def analyze(pages):
                 "title": "Comparison data is laid out in non-semantic grids",
                 "severity": "medium", "confidence": "medium",
                 "evidence": "%d grid(s) of >=3 aligned columns carry comparison content with "
-                            "no <table> on %s (page_class=%s, %d distinct price claims, "
-                            "pricing context=%s); row-column pairing does not survive "
+                            "no <table> on %s (page_class=%s, %d distinct price claims%s); "
+                            "row-column pairing does not survive "
                             "extraction."
                             % ((p.get("tables") or {}).get("div_grid_candidates", 0),
                                p["requested_url"], p.get("page_class"), distinct_prices,
-                               pricing_context),
+                               " with plan/pricing vocabulary nearby" if pricing_context else ""),
                 "why_it_matters": "Extracted alone, grid cells lose their plan/value pairing, "
                                   "so 'which plan includes X' questions extract wrongly.",
                 "suggested_action": {
