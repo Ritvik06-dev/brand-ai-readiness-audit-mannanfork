@@ -13,6 +13,20 @@
     "mode": { "enum": ["snapshot", "url"] },
     "generated_at": { "type": "string", "format": "date-time" },
     "results": { "type": "array", "items": { "$ref": "#/definitions/check_result" } },
+    "opportunities": {
+      "type": "array",
+      "description": "Proactive improvements beyond detected defects, carried only by skills that own them (answer-coverage: market-derived demand with no answering page). Never inside findings; the orchestrator merges and counts them in summary.opportunities. v1.1 contract addition (recorded).",
+      "items": {
+        "type": "object",
+        "required": ["title", "rationale", "priority"],
+        "additionalProperties": false,
+        "properties": {
+          "title": { "type": "string" },
+          "rationale": { "type": "string" },
+          "priority": { "enum": ["critical", "high", "medium", "low"] }
+        }
+      }
+    },
     "not_evaluated": {
       "type": "array",
       "description": "Checks this specialist could not run and why (capability, deadline, robots-blocked probe). Never a finding.",

@@ -154,6 +154,7 @@ def main():
     findings = []
     needs_verification = []
     not_evaluated = []
+    opportunities = []
     skill_ids = set()
     all_reported = set()
     lint_warnings = []
@@ -224,6 +225,8 @@ def main():
         for ne in frag.get("not_evaluated", []):
             all_reported.add(ne["check_id"])
             not_evaluated.append({"check_id": ne["check_id"], "reason": ne["reason"]})
+        for opp in frag.get("opportunities", []):
+            opportunities.append(opp)
 
     # Catalog resolution lint: no invented check ids anywhere.
     used_ids = set(all_reported)
@@ -308,6 +311,19 @@ def main():
                                  " satisfy severity_model rule 1 (critical requires high)"
                                  % (f["check_id"], f.get("confidence")))
 
+    # Opportunities: merge, dedupe by title (stable order), never counted as findings.
+    seen_titles = set()
+    merged_opps = []
+    for opp in opportunities:
+        key = opp["title"].strip().lower()
+        if key in seen_titles:
+            continue
+        seen_titles.add(key)
+        merged_opps.append(opp)
+    merged_opps.sort(key=lambda o: ({"critical": 0, "high": 1, "medium": 2, "low": 3}
+                                    .get(o["priority"], 4), o["title"]))
+    opportunities = merged_opps
+
     counts = {"critical": 0, "high": 0, "medium": 0, "low": 0}
     for f in ordered:
         counts[f["severity"]] += 1
@@ -317,7 +333,7 @@ def main():
         "high": counts["high"],
         "medium": counts["medium"],
         "low": counts["low"],
-        "opportunities": 0,
+        "opportunities": len(opportunities),
     }
     if summary["total_findings"] != len(ordered):
         fail("arithmetic guard", ["total_findings != len(findings)"])
@@ -354,7 +370,7 @@ def main():
         "coverage": coverage,
         "summary": summary,
         "findings": ordered,
-        "opportunities": [],
+        "opportunities": opportunities,
         "needs_verification": needs_verification,
         "not_evaluated": not_evaluated,
         "limitations": limitations,

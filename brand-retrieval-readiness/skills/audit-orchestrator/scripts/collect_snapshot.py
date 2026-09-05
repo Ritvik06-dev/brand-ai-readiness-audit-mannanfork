@@ -858,7 +858,7 @@ def resolve_external_presence(fetcher, pages, site_host):
     return out
 
 
-def build_excerpts(pages, sitemap_summary):
+def build_excerpts(pages, sitemap_summary, probes):
     budgets = {"answer-coverage-audit": 24000, "freshness-consistency-audit": 16000,
                "referral-experience-audit": 12000}
     ans_pages, frs_pages, ref_pages = [], [], []
@@ -912,7 +912,12 @@ def build_excerpts(pages, sitemap_summary):
                 "overlay_in_raw_html": p["interactive"]["overlay_in_raw_html"],
                 "accordions": p["interactive"]["accordions"],
                 "details_elements": p["interactive"]["details_elements"],
-                "dialogs": p["interactive"]["dialogs"]} for p in pages]}}
+                "dialogs": p["interactive"]["dialogs"]} for p in pages],
+               "soft_404": probes.get("soft_404"),
+               "redirect_path_preservation": probes.get("redirect_path_preservation", []),
+               "note": "passages_checked.json arrives after the --passages post-step;"
+                       " REF-SOFT-404 / REF-404-DEAD-END / REF-PATH-DROP-REDIRECT read"
+                       " the probe results here"}}
     return ans, frs, ref
 
 
@@ -1056,7 +1061,8 @@ def run_collect(args):
     external = resolve_external_presence(fetcher, pages, parts.netloc)
 
     # excerpts ----------------------------------------------------------------
-    ans, frs, ref = build_excerpts(pages, sitemap_summary)
+    ans, frs, ref = build_excerpts(pages, sitemap_summary, {"soft_404": soft,
+                                                            "redirect_path_preservation": redirects})
 
     snapshot = {
         "snapshot_version": 1,
