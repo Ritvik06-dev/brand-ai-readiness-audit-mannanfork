@@ -988,7 +988,7 @@ def cap_claims(claims):
     return out
 
 
-def build_excerpts(pages, sitemap_summary, probes, catalog=None):
+def build_excerpts(pages, sitemap_summary, probes, catalog=None, corroboration=None):
     budgets = {"answer-coverage-audit": 24000, "freshness-consistency-audit": 16000,
                "referral-experience-audit": 6000}
     ans_pages, frs_pages, ref_pages, empty_urls = [], [], [], []
@@ -1051,7 +1051,9 @@ def build_excerpts(pages, sitemap_summary, probes, catalog=None):
            "generated_at": _now(), "pages": ans_pages,
            "pages_without_content": empty_urls,
            "extras": {"checks": checks_for(catalog, "answer-coverage-audit"),
-                      "fragment_shape": FRAGMENT_SHAPE}}
+                      "fragment_shape": FRAGMENT_SHAPE,
+                      "corroboration": corroboration or {"independent_resolving": 0,
+                                                          "brand_matched": 0}}}
     frs = {"kind": "excerpt", "skill_id": "freshness-consistency-audit",
            "budget_chars": 16000, "generated_at": _now(), "pages": frs_pages,
            "pages_without_content": empty_urls,
@@ -1062,7 +1064,9 @@ def build_excerpts(pages, sitemap_summary, probes, catalog=None):
                                                         if c["type"] == "date"][:5]}
                                      for p in pages],
                       "checks": checks_for(catalog, "freshness-consistency-audit"),
-                      "fragment_shape": FRAGMENT_SHAPE}}
+                      "fragment_shape": FRAGMENT_SHAPE,
+                      "corroboration": corroboration or {"independent_resolving": 0,
+                                                          "brand_matched": 0}}}
     ref = {"kind": "excerpt", "skill_id": "referral-experience-audit",
            "budget_chars": 6000, "generated_at": _now(), "pages": ref_pages,
            "pages_without_content": empty_urls,
@@ -1317,7 +1321,15 @@ def run_collect(args):
     catalog = _load_catalog()
     ans, frs, ref = build_excerpts(pages, sitemap_summary, {"soft_404": soft,
                                                             "redirect_path_preservation": redirects},
-                                   catalog=catalog)
+                                   catalog=catalog,
+                                   corroboration={
+                                       "independent_resolving": sum(
+                                           1 for e in external
+                                           if e.get("owned_vs_independent") == "independent"
+                                           and isinstance(e.get("http_status"), int)
+                                           and 200 <= e["http_status"] < 400),
+                                       "brand_matched": sum(
+                                           1 for e in external if e.get("brand_name_match") is True)})
 
     snapshot = {
         "snapshot_version": 1,
@@ -1484,7 +1496,7 @@ def run_passages(args):
                 if want and want in full:
                     note = ("passage text is present on the page but split across blocks "
                             "or interleaved - not one contiguous run")
-                elif want and want in head_runs:
+                elif want and any(want in t for t in head_runs):
                     contiguous = True
                     note = ("passage matches a heading or link run - "
                             "a single highlightable run")

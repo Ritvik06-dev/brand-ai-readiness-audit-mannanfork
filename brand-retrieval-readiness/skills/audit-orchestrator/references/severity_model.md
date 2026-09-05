@@ -65,6 +65,18 @@ lists in the remediation; never fetch them at runtime).
    orchestrator; downstream effects become `affected_urls`/`affected_surfaces`, not separate
    findings.
 
+### Corroboration damping (soft)
+
+When `extras.corroboration` in the excerpt shows **3 or more independent resolving anchors
+with brand match**, the brand is being cited despite its on-site gaps — the non-citation
+failure mode is not manifesting. Treat **absence-type** findings (a missing optional signal:
+an unanswered site-derived question, absent optional markup, uniform-but-harmless lastmod)
+one severity step lower (floor: low), and say so in `why_it_matters`: "Independently
+corroborated (N resolving anchors with brand match): the brand is cited despite this gap;
+fix for robustness, not recovery." Never damp contradictions, parse failures, wrong facts,
+or outages — a wrong quotable fact is worse with reach, not better. Corroboration that is
+owned-only, unresolved, or brand-unmatched never damps.
+
 ## Suggested-action priority
 
 `priority` mirrors severity of the resolved mechanism, adjusted by site type and effort:

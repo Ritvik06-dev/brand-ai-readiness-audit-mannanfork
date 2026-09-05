@@ -132,7 +132,9 @@ from there with explicit paths.
    claims, validates the report schema, and prints the human summary.
 
 7. **Emit.** Read `./audit/report.json` once for the human summary below — the build already
-   validated its schema — then present the summary verbatim, then the report JSON. State
+   validated its schema — then write the summary in chat in your own words: what is broken in
+   fix order, with owner and verify-line each, plus the honest limits. Never paste the report
+   JSON in chat; point to its path (`./audit/report.json`) instead. State
    `audit_status`, `coverage`, and every `not_evaluated` check explicitly — "not evaluated"
    is never a defect and never silently dropped. After a valid report: stop. No further
    verification passes.

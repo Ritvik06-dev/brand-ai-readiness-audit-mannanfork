@@ -72,7 +72,9 @@ gap between them is where the findings and the opportunities live.
    - **Sampling gap:** when the expected page was never sampled, or the question cannot be
      answered from sampled pages at all, that is a sampling limitation — `not_evaluated`
      with the reason (`sampling limitation: ...`), never a finding and never an opportunity.
-     Only a sampled page's silence is a gap.
+     Only a sampled page's silence is a gap. Corroboration damping (severity_model.md) may
+     lower a site-derived absence finding one step when external corroboration is strong —
+     state the cited-despite sentence in `why_it_matters`.
    - **ANS-PASSAGE-INCOMPLETE** — the passage exists but omits subject, units, or timeframe;
      extracted alone it under-informs.
    - **ANS-QUALIFIER-DETACHED** — the claim is stated without the qualifier that scopes it
