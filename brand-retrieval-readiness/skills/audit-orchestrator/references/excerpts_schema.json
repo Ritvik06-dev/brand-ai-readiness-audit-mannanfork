@@ -120,7 +120,7 @@
             "properties": {
               "question_id": { "type": "string" },
               "page_url": { "type": "string" },
-              "contiguous": { "type": "boolean", "description": "candidate_passage exists as one contiguous visible text-node run in the page's raw HTML" },
+              "contiguous": { "type": "boolean", "description": "candidate_passage exists as a contiguous visible text run - within one text block or spanning two adjacent blocks (scroll-to-text range fragments match across block boundaries); interleaved headings still fail" },
               "quote": { "type": ["string", "null"] },
               "note": { "type": ["string", "null"], "description": "e.g. 'price split across three spans', 'inside collapsed details'" }
             }
