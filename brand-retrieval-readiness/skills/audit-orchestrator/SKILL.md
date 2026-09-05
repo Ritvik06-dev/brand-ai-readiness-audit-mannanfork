@@ -76,7 +76,9 @@ from there with explicit paths.
    org-portfolio` — this gates page sampling, question archetypes, in-scope claim types, and
    which checks apply. Heuristics: a shop selling physical goods is `ecommerce` (not `saas`);
    a company site describing services/work is `org-portfolio`. Classify from what the site
-   sells or does — never from words in the domain string, which is not evidence. Declare only capabilities this
+   sells or does — never from words in the domain string, which is not evidence. Do not fetch
+   the site to classify; classify from the request context and confirm against the snapshot
+   summary. Declare only capabilities this
    run will actually exercise as comma-separated flags.
    Then run:
    `python3 <orchestrator>/scripts/collect_snapshot.py --url <URL> --out ./audit/snapshot.json --site-type <types> --capabilities web_fetch[,web_search][,browser][,subagents]`
@@ -102,7 +104,8 @@ from there with explicit paths.
 5. **Judgment specialists** (in manifest order). Each fragment must validate against
    `finding_fragment.json` before step 6 (each SKILL.md states the gate); the merge salvages
    anything invalid to `not_evaluated` with a lint warning.
-   Before authoring each specialist's fragment, read that specialist's SKILL.md; quote only
+   Before authoring each specialist's fragment, read that specialist's SKILL.md — when you
+   reach its step, not upfront with the others; quote only
    `check_id`s listed for it in `references/check_catalog.json` — ids outside the catalog do
    not exist. Remove helper/scratch scripts from the working directory before step 6.
    - `answer-coverage-audit`: read `audit/excerpts/answer-coverage-audit.json` ONCE, follow its
