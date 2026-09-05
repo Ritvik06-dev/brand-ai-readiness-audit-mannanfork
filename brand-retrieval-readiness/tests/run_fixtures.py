@@ -44,6 +44,12 @@ def run(cmd):
 def dig(d, dotted):
     node = d
     for part in dotted.split("."):
+        if isinstance(node, list):
+            try:
+                node = node[int(part)]
+                continue
+            except (ValueError, IndexError):
+                return None
         if not isinstance(node, dict) or part not in node:
             return None
         node = node[part]

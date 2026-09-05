@@ -105,7 +105,10 @@ def analyze(pages):
     shell_pages = []
     for p in pages:
         ind = shell_indicators(p)
-        if len(ind) >= 2 and state_fact_count(p) < 3:
+        # lost (not partially readable) only when the payload holds NO
+        # content-like strings at all - any fact-bearing string means the
+        # content is partially readable (REP-STATE-ONLY-FACT's case)
+        if len(ind) >= 2 and state_fact_count(p) == 0:
             shell_pages.append((p, ind))
     if shell_pages:
         k = len(shell_pages)

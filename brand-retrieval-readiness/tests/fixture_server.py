@@ -28,12 +28,21 @@ def make_handler(scenario):
             pass
 
         def _resolve(self):
-            path = self.path.split("?")[0]
+            from urllib.parse import unquote
+            path = unquote(self.path.split("?")[0])
             ua = self.headers.get("User-Agent", "") or ""
             for token, rule in (scenario.get("ua_rules") or {}).items():
                 if token.lower() in ua.lower():
                     return (rule["status"], rule.get("headers", {}),
                             rule.get("body", "<html><body>challenge</body></html>"))
+            redir = (scenario.get("redirects") or {}).get(path)
+            if redir:
+                # Location travels ONLY via the raw UTF-8 write; a normal
+                # send_header would crash the server on non-ASCII locations
+                # (exactly the real-world shape under test)
+                return (redir.get("status", 302),
+                        {"_raw_location": redir["location"]},
+                        redir.get("body", ""))
             if path == "/robots.txt":
                 r = scenario["robots"]
                 return (r["status"], {"Content-Type": "text/plain"}, r["body"])
@@ -50,12 +59,26 @@ def make_handler(scenario):
         def _serve(self, include_body):
             status, headers, body = self._resolve()
             body_bytes = body.encode("utf-8")
+            # a Location header may carry RAW UTF-8 bytes (the real-world shape
+            # that crashes latin-1 clients) - write it outside send_header
+            raw_loc = headers.pop("_raw_location", None)
+            if headers.pop("X-Gzip-Truncate", None) and include_body:
+                import gzip as _gzip
+                full = _gzip.compress(body_bytes)
+                body_bytes = full[: max(1, len(full) - 8)]  # truncated stream
+                headers["Content-Encoding"] = "gzip"
+                headers["Content-Length"] = str(len(body_bytes))
             self.send_response(status)
             headers = dict(headers)
             headers.setdefault("Content-Type", "text/html; charset=utf-8")
             headers["Content-Length"] = str(len(body_bytes) if include_body else 0)
             for k, v in headers.items():
                 self.send_header(k, v)
+            if raw_loc:
+                # send_response buffers headers until end_headers - a raw
+                # wfile.write here would jump the queue and corrupt the wire
+                self._headers_buffer.append(
+                    ("Location: " + raw_loc + "\r\n").encode("utf-8"))
             self.end_headers()
             if include_body and self.command != "HEAD":
                 self.wfile.write(body_bytes)

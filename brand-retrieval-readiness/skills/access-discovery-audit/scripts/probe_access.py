@@ -155,44 +155,57 @@ def check_robots_role(snap, rows, important_pages):
             "important_paths_checked": len(important_pages),
             "note": "no search-index crawler is disallowed on any sampled important path",
         })
-    results = []
+    # One root cause, one finding: all blocked retrieval-crawler tokens go into
+    # a single result (per-token rows in observations) - symptom spam would
+    # triple-count one robots-policy defect.
+    token_rows = []
+    all_urls = []
+    site_wide = False
+    classes = set()
+    rule_texts = []
     for token, hits in blocked:
-        site_wide = any(norm_path(p["requested_url"]) == "/" for p, _ in hits)
-        classes = sorted({p.get("page_class") or "page" for p, _ in hits})
-        severity = "critical" if site_wide else "high"
-        sample = hits[0][1]
-        rule_text = ""
+        if any(norm_path(p["requested_url"]) == "/" for p, _ in hits):
+            site_wide = True
+        all_urls.extend(p["requested_url"] for p, _ in hits)
+        classes.update(p.get("page_class") or "page" for p, _ in hits)
         disallow, _allow = rules_for_token(rows, token)
+        rule_text = ""
+        sample = hits[0][1]
         for rule in disallow:
             if rule_matches(sample, rule):
                 rule_text = rule
                 break
-        urls = [p["requested_url"] for p, _ in hits]
-        results.append(result(
-            "ACC-ROBOTS-ROLE", "finding", urls=urls,
-            observations={"token": token, "blocked_paths": [p for _, p in hits],
-                          "page_classes": classes, "site_wide": site_wide,
-                          "matching_rule": rule_text,
-                          "direct_statuses": {p["requested_url"]: p["status"]
-                                                    for p, _ in hits}},
-            evidence_quality="direct-measurement",
-            candidate=candidate(
-                "%s crawler access to %s pages is blocked by robots policy while direct fetches succeed"
-                % (token, "/".join(classes[:2])),
-                severity, "high",
-                "robots.txt contains 'User-agent: %s' with '%s: %s'; the same path(s) returned "
-                "200 to a direct fetch during the audit (%s of %d sampled important paths blocked)."
-                % (token, "Disallow", rule_text or "/", len(hits), len(important_pages)),
-                "OpenAI documents that sites disallowing OAI-SearchBot 'will not be shown in "
-                "ChatGPT search answers, though can still appear as navigational links' "
-                "(developers.openai.com/api/docs/bots).",
-                "Allow %s on public %s paths (keep training-bot policy unchanged if that "
-                "restriction is intentional)." % (token, " and ".join(classes[:2])),
-                severity,
-                surfaces=["chatgpt_search", "claude_search", "perplexity_retrieval"],
-                effort="small", owner="web-platform",
-                acceptance="No robots.txt rule for %s matches the affected path(s), and a fetch "
-                           "with that User-Agent returns 200." % token)))
+        rule_texts.append("%s: '%s' (on %d sampled path%s)"
+                          % (token, rule_text or "/", len(hits),
+                             "" if len(hits) == 1 else "s"))
+        token_rows.append({"token": token, "matching_rule": rule_text,
+                           "blocked_sampled_paths": [p for _, p in hits],
+                           "direct_status": hits[0][0].get("status")})
+    severity = "critical" if site_wide else "high"
+    classes_sorted = sorted(classes)
+    results = [result(
+        "ACC-ROBOTS-ROLE", "finding", urls=sorted(set(all_urls)),
+        observations={"blocked_tokens": token_rows,
+                      "page_classes": classes_sorted,
+                      "site_wide": site_wide},
+        evidence_quality="direct-measurement",
+        candidate=candidate(
+            "Retrieval-crawler access to %s pages is blocked by robots policy while "
+            "direct fetches succeed" % " and ".join(classes_sorted[:2]),
+            severity, "high",
+            "robots.txt disallows %s. The same path(s) returned 200 to a direct fetch "
+            "during the audit." % "; ".join(rule_texts),
+            "OpenAI documents that sites disallowing OAI-SearchBot 'will not be shown in "
+            "ChatGPT search answers, though can still appear as navigational links' "
+            "(developers.openai.com/api/docs/bots).",
+            "Allow the documented retrieval crawlers on public %s paths (keep any "
+            "training-bot policy unchanged if that restriction is intentional)."
+            % " and ".join(classes_sorted[:2]),
+            severity,
+            surfaces=["chatgpt_search", "claude_search", "perplexity_retrieval"],
+            effort="small", owner="web-platform",
+            acceptance="No robots.txt rule for any listed token matches the affected "
+                       "path(s), and a fetch with that User-Agent returns 200."))]
     return results
 
 
@@ -495,6 +508,16 @@ def check_canonical(snap, pages):
                        "scheme/host/trailing-slash normalization."))
 
 
+def redirect_key(url):
+    """Exact resource key for LOOP detection: scheme + FULL host (www matters -
+    an apex->www canonicalization hop is not a loop; a real www<->apex cycle
+    repeats full URLs within a few hops) + normalized path."""
+    parts = urlparse(url or "")
+    host = (parts.netloc or "").lower().rstrip(".")
+    path = (parts.path or "/").rstrip("/") or "/"
+    return "%s://%s%s" % (parts.scheme, host, path)
+
+
 def check_redirect_loop(snap, pages):
     loops, chains = [], []
     for page in pages:
@@ -502,7 +525,7 @@ def check_redirect_loop(snap, pages):
         seen = {}
         loop = False
         for i, u in enumerate(chain):
-            key = norm_url_key(u)
+            key = redirect_key(u)
             if key in seen:
                 loop = True
                 break

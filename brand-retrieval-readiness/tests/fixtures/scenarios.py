@@ -314,3 +314,79 @@ SCENARIOS = [
         "note": "severity ceiling high at medium confidence - the rule-1 clamp must never fire here",
     },
 ]
+
+
+DUAL_STATE_BODY = ('<html><head><title>Acme</title>'
+    '<script id="__NEXT_DATA__" type="application/json">'
+    '{"props":{"pricing":"Plans start at $29 per month on the Business tier."}}'
+    '</script>'
+    '<script id="__NUXT__" type="application/json">'
+    '{"stats":{"customers":"12,000 teams build on Acme every day."}}'
+    '</script>'
+    '</head><body><div id="root"></div>'
+    '<noscript>You need to enable JavaScript to run this app.</noscript></body></html>')
+
+UNICODE_TARGET_BODY = PAGE.format(title="Bangla Help", content="<p>" + LIPSUM + "</p>")
+
+SCENARIOS.extend([
+    {
+        "name": "21-dual-state-scripts",
+        "site_type": "saas",
+        "robots": {"status": 200, "body": "User-agent: *\nAllow: /\n"},
+        "pages": {"/": P(DUAL_STATE_BODY)},
+        "missing_path": {"status": 404, "body": HELPFUL404_BODY},
+        "expected_findings": {"REP-STATE-ONLY-FACT": {"severity": "medium"}},
+        "expected_non_findings": ["REP-KEY-FACT-LOSS"],
+        "snapshot_asserts": {"pages.0.inline_state.payload_keys.0": "__NEXT_DATA__",
+                             "pages.0.inline_state.payload_keys.1": "__NUXT__"},
+        "note": "the second state script crashed the collector before the fix (str.append)",
+    },
+    {
+        "name": "22-unicode-redirect",
+        "site_type": "publisher",
+        "robots": {"status": 200, "body": "User-agent: *\nAllow: /\n"},
+        "pages": {"/বাংলা-সহায়তা": P(UNICODE_TARGET_BODY)},
+        "redirects": {"/": {"status": 302, "location": "/বাংলা-সহায়তা",
+                            "headers": {"_raw_location": "/বাংলা-সহায়তা"}}},
+        "missing_path": {"status": 404, "body": HELPFUL404_BODY},
+        "expected_findings": {},
+        "expected_non_findings": ["ACC-REDIRECT-LOOP"],
+        "note": "raw non-ASCII Location must be percent-encoded, not fatal (vernacular web)",
+    },
+    {
+        "name": "23-gzip-truncated",
+        "site_type": "saas",
+        "robots": {"status": 200, "body": "User-agent: *\nAllow: /\n"},
+        "pages": {"/": P(LIPSUM, headers={"Content-Encoding": "gzip",
+                                          "X-Gzip-Truncate": "1"})},
+        "missing_path": {"status": 404, "body": HELPFUL404_BODY},
+        "expected_findings": {},
+        "expected_non_findings": [],
+        "note": "truncated gzip body must degrade to partial, never crash (cnn case)",
+    },
+    {
+        "name": "24-redirect-canonicalization",
+        "site_type": "saas",
+        "robots": {"status": 200, "body": "User-agent: *\nAllow: /\n"},
+        "pages": {"/": P(PAGE.format(title="Acme", content=HOME_LINKS + LIPSUM)),
+                  "/www-home": P(PAGE.format(title="Acme www", content=LIPSUM))},
+        "redirects": {"/": {"status": 301, "location": "/www-home"}},
+        "missing_path": {"status": 404, "body": HELPFUL404_BODY},
+        "expected_findings": {},
+        "expected_non_findings": ["ACC-REDIRECT-LOOP"],
+        "note": "a single canonicalization hop is not a loop (the beam.cloud false positive)",
+    },
+    {
+        "name": "25-redirect-loop-real",
+        "site_type": "saas",
+        "robots": {"status": 200, "body": "User-agent: *\nAllow: /\n"},
+        "pages": {"/": P(PAGE.format(title="Acme", content=LIPSUM))},
+        "redirects": {"/": {"status": 302, "location": "/a"},
+                      "/a": {"status": 302, "location": "/b"},
+                      "/b": {"status": 302, "location": "/"}},
+        "missing_path": {"status": 404, "body": HELPFUL404_BODY},
+        "expected_findings": {"ACC-REDIRECT-LOOP": {"severity": "high"}},
+        "expected_non_findings": [],
+        "note": "a genuine cycle (repeated full URL) is the finding case",
+    },
+])

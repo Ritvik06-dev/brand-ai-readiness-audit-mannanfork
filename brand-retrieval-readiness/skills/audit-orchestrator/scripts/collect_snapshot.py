@@ -20,6 +20,7 @@ references/snapshot_schema.json using the vendored validator from build_report.
 import argparse
 import datetime
 import gzip
+import zlib
 import ipaddress
 import json
 import os
@@ -30,7 +31,7 @@ import time
 import uuid
 from html.parser import HTMLParser
 from urllib.error import HTTPError, URLError
-from urllib.parse import urljoin, urlparse, urlunparse
+from urllib.parse import quote, urljoin, urlparse, urlunparse
 from urllib.request import Request, build_opener, HTTPRedirectHandler
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -94,6 +95,22 @@ class NoRedirect(HTTPRedirectHandler):
 
 _OPENER = build_opener(NoRedirect)
 
+SAFE_URL_CHARS = ":/?#[]@!$&'()*+,;=%~-._"
+
+
+def pct_encode_url(u):
+    """Percent-encode non-ASCII in URLs (raw Unicode in a Location header or an
+    href crashes urllib on re-request - the vernacular-web bug). Recovers the
+    original bytes from latin-1-decoded headers, then encodes byte-wise; existing
+    %XX stays intact."""
+    if not u:
+        return u
+    try:
+        b = u.encode("latin-1")
+    except UnicodeEncodeError:
+        b = u.encode("utf-8")
+    return quote(b, safe=SAFE_URL_CHARS)
+
 
 class Fetcher:
     def __init__(self, deadline_ts, allow_private, per_request_timeout=8.0):
@@ -127,6 +144,7 @@ class Fetcher:
     def fetch(self, url, ua=AUDITOR_UA, method="GET", max_bytes=PAGE_BYTES):
         """One logical fetch following <=MAX_HOPS hops manually. Never raises
         for network conditions; returns a result dict."""
+        url = pct_encode_url(url)
         chain = [url]
         current = url
         started = time.time()
@@ -176,13 +194,19 @@ class Fetcher:
             if headers.get("content-encoding", "").lower() == "gzip":
                 try:
                     raw = gzip.decompress(raw)
-                except OSError:
-                    pass
+                except (OSError, EOFError, zlib.error, ValueError):
+                    try:
+                        # truncated stream: salvage what decompresses
+                        partial = zlib.decompressobj(16 + zlib.MAX_WBITS).decompress(raw)
+                        if partial:
+                            raw = partial
+                    except (OSError, EOFError, zlib.error, ValueError):
+                        pass  # keep raw bytes; extraction degrades to partial
             if status in (301, 302, 303, 307, 308):
                 loc = headers.get("location")
                 if not loc:
                     break
-                nxt = urljoin(current, loc)
+                nxt = pct_encode_url(urljoin(current, loc))
                 chain.append(nxt)
                 current = nxt
                 continue
@@ -227,6 +251,7 @@ class PageExtractor(HTMLParser):
         self._jsonld_buf = None
         self._state_buf = None
         self._state_key = None
+        self._state_payloads = []
         self.canvas = 0
         self.svg_open = 0
         self.svg_text = 0
@@ -372,7 +397,10 @@ class PageExtractor(HTMLParser):
                                             "parsed": parsed if ok else None})
                     self._jsonld_buf = None
                 if self._state_buf is not None:
-                    self._state_buf = "".join(self._state_buf)  # parsed after feed()
+                    self._state_payloads.append((self._state_key or "inline",
+                                                 "".join(self._state_buf)))
+                    self._state_buf = None
+                    self._state_key = None
             if self.skip_depth:
                 self.skip_depth -= 1
             return
@@ -479,9 +507,7 @@ def capture_page(res, url, extractor, sitemap_lastmod):
                "link": heads.get("link")}
     visible = "\n".join(extractor.blocks)
     state_payloads = []
-    if extractor._state_buf:
-        key = extractor._state_key or "inline"
-        buf = extractor._state_buf
+    for key, buf in extractor._state_payloads:
         try:
             parsed_state = json.loads(buf)
         except ValueError:
@@ -1009,10 +1035,21 @@ def run_collect(args):
 
     # homepage + discovery ----------------------------------------------------
     home_res = fetcher.fetch(base)
+    home_redirect_record = None
     if home_res.get("error") or home_res.get("status") is None:
-        print("collect_snapshot: FATAL - homepage unreachable: %s" % home_res.get("error"))
-        print(json.dumps({"snapshot_written": False, "error": home_res.get("error")}))
-        sys.exit(1)
+        chain = res_chain = home_res.get("redirect_chain") or []
+        if len(chain) >= 3:
+            # a homepage-level redirect loop is exactly what ACC-REDIRECT-LOOP
+            # must see - record the chain and keep building the snapshot
+            home_redirect_record = chain
+            notes.append("homepage redirect chain exhausted (%d hops)" % len(chain))
+        else:
+            print("collect_snapshot: FATAL - homepage unreachable: %s" % home_res.get("error"))
+            print(json.dumps({"snapshot_written": False, "error": home_res.get("error")}))
+            sys.exit(1)
+        home_res = {"status": None, "headers": {}, "body": b"",
+                    "final_url": chain[-1] if chain else base,
+                    "redirect_chain": chain, "timing_ms": 0, "error": None}
     home_ex = PageExtractor(base)
     home_ex.feed(home_res["body"].decode("utf-8", "replace"))
     home_ex.close()
@@ -1030,13 +1067,56 @@ def run_collect(args):
 
     # per-page capture --------------------------------------------------------
     pages = []
+    if home_redirect_record:
+        pages.append({
+            "requested_url": base, "final_url": home_redirect_record[-1],
+            "status": 0, "redirect_chain": home_redirect_record,
+            "content_type": None, "bytes": 0, "timing_ms": 0,
+            "raw_html": "", "visible_text": "", "title": None,
+            "meta_description": None, "canonical": None, "lang": None,
+            "hreflang": [], "robots_meta": None, "x_robots_tag": None,
+            "headers": {}, "sitemap_lastmod": None, "page_class": "homepage",
+            "headings": [], "links": [], "jsonld": [], "microdata_types": [],
+            "open_graph": {}, "images": [],
+            "tables": {"semantic_count": 0, "div_grid_candidates": 0},
+            "interactive": {"accordions": 0, "dialogs": 0, "details_elements": 0,
+                            "overlay_in_raw_html": None},
+            "non_text": {"canvas": 0, "svg_without_text": 0,
+                         "video_without_transcript": 0},
+            "inline_state": {"payload_keys": [], "contrast_strings": []},
+            "claim_index": [], "_structured_dates": [], "_sections": []})
     for u in selected:
         if fetcher.remaining() < 3.0:
             notes.append("deadline: stopped page capture early")
             break
         res = fetcher.fetch(u)
-        if res.get("error") or res.get("status") is None or (res.get("status") or 500) >= 400:
-            notes.append("page fetch failed: %s (%s)" % (u, res.get("error") or res.get("status")))
+        if (res.get("error") or res.get("status") is None
+                or (res.get("status") or 500) >= 400):
+            # a redirect-exhausted chain is ACC-REDIRECT-LOOP evidence - record
+            # the chain instead of dropping the fetch entirely
+            if len(res.get("redirect_chain") or []) >= 3:
+                notes.append("page redirect chain exhausted: %s" % u)
+                pages.append({
+                    "requested_url": u,
+                    "final_url": (res.get("redirect_chain") or [u])[-1],
+                    "status": 0,
+                    "redirect_chain": res.get("redirect_chain") or [u],
+                    "content_type": None, "bytes": 0, "timing_ms": res.get("timing_ms"),
+                    "raw_html": "", "visible_text": "", "title": None,
+                    "meta_description": None, "canonical": None, "lang": None,
+                    "hreflang": [], "robots_meta": None, "x_robots_tag": None,
+                    "headers": {}, "sitemap_lastmod": None, "page_class": labels.get(u, "other"),
+                    "headings": [], "links": [], "jsonld": [], "microdata_types": [],
+                    "open_graph": {}, "images": [],
+                    "tables": {"semantic_count": 0, "div_grid_candidates": 0},
+                    "interactive": {"accordions": 0, "dialogs": 0, "details_elements": 0,
+                                    "overlay_in_raw_html": None},
+                    "non_text": {"canvas": 0, "svg_without_text": 0,
+                                 "video_without_transcript": 0},
+                    "inline_state": {"payload_keys": [], "contrast_strings": []},
+                    "claim_index": [], "_structured_dates": [], "_sections": []})
+            else:
+                notes.append("page fetch failed: %s (%s)" % (u, res.get("error") or res.get("status")))
             continue
         ex = PageExtractor(u)
         ex.feed(res["body"].decode("utf-8", "replace"))
