@@ -44,7 +44,8 @@ conflicts are the measurable, on-site form of that failure.
 
 1. **Build the claim matrix** from the excerpt's `claim_index_subset`: group by claim type and
    semantic identity (the "Pro plan price", "SSO availability", "v3 support window") across
-   pages.
+   pages. Start from `extras.claim_matrix` (type-grouped quotes with page URLs and scoping
+   context — grouping only, never verdicts); verify each pair against the subsets before ruling.
 2. **Adjudicate groups** — the judgment the script cannot make:
    - **FRS-CLAIM-CONFLICT**: two pages state materially different values for the same fact
      with no on-page scoping (tier, region, date-of-publication). Quote both sides with their

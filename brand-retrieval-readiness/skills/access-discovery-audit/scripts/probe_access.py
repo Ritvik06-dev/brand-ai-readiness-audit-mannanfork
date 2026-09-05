@@ -30,7 +30,7 @@ CHECK_IDS = [
     "ACC-ROBOTS-ROLE", "ACC-ROBOTS-UNAVAILABLE", "ACC-INDEX-CONTROL",
     "ACC-NOARCHIVE-COPILOT", "ACC-CANONICAL-CONFLICT", "ACC-REDIRECT-LOOP",
     "ACC-BOT-CHALLENGE", "ACC-SITEMAP-ORPHAN", "ACC-SITEMAP-INVALID",
-    "ACC-HREFLANG-INCONSISTENT", "ACC-LLMS-TXT-ABSENT",
+    "ACC-HREFLANG-INCONSISTENT", "ACC-LLMS-TXT-ABSENT", "ACC-LINK-ROT",
 ]
 IMPORTANT_CLASSES = {"homepage", "decision", "product", "docs", "about", "trust"}
 HREFLANG_RE = re.compile(r"^[a-z]{2,3}(-[A-Za-z]{2})?(-[a-z]{2})?$")
@@ -698,6 +698,45 @@ def check_sitemap_orphan(snap, pages):
                        "one sampled page."))
 
 
+def check_link_rot(snap):
+    rows = (snap.get("probes") or {}).get("internal_link_rot")
+    if rows is None:
+        return result("ACC-LINK-ROT", "not_evaluated", observations={
+            "reason": "no rot sample recorded (older snapshot or budget shed)"})
+    rotted = [r for r in rows
+              if isinstance(r.get("status"), int) and r["status"] >= 400 and r["status"] != 410]
+    unresolved = [r["url"] for r in rows if not isinstance(r.get("status"), int)]
+    observations = {"sampled": len(rows), "rotted": [r["url"] for r in rotted],
+                    "unresolved_timeouts": unresolved,
+                    "note": "410 Gone is correct removal, never rot; "
+                            "timeouts never become findings; external links out of scope"}
+    if not rotted:
+        observations["outcome"] = "no rot in sample"
+        return result("ACC-LINK-ROT", "pass", observations=observations)
+    decision = [r for r in rotted if re.search(
+        r"pric|pricing|product|docs?/|guide|help|support|checkout|contact|about",
+        urlparse(r["url"]).path, re.I)]
+    severity = "medium" if (len(rotted) >= 3 or decision) else "low"
+    return result(
+        "ACC-LINK-ROT", "finding", urls=[r["url"] for r in rotted[:5]],
+        observations=observations,
+        evidence_quality="direct-measurement",
+        candidate=candidate(
+            "Sampled internal links return errors",
+            severity, "medium",
+            "%d of %d sampled internal links return %s (%s)." % (
+                len(rotted), len(rows),
+                ", ".join(sorted({str(r["status"]) for r in rotted})),
+                "; ".join(r["url"] for r in rotted[:3])),
+            "Dead internal links strand visitors and crawlers on error pages; "
+            "link equity and citation paths die with them.",
+            "Fix or redirect each listed URL so sampled internal links resolve "
+            "to 2xx or a correct 410.",
+            severity, effort="small", owner="web-platform",
+            acceptance="Each listed URL returns 2xx, or a 410 Gone where removal "
+                       "is intentional."))
+
+
 def check_sitemap_invalid(snap):
     sitemap = snap.get("sitemap")
     if not sitemap:
@@ -885,6 +924,7 @@ def analyze(snap, notes):
     results.append(check_sitemap_invalid(snap))
     results.append(check_hreflang(snap, pages))
     results.append(check_llms_txt(snap))
+    results.append(check_link_rot(snap))
     return results
 
 

@@ -228,6 +228,22 @@
             "format": { "enum": ["llms-txt", "none"] }
           }
         },
+        "internal_link_rot": {
+          "type": "array",
+          "description": "sampled unfetched same-origin links with their fetch status; 410 Gone is correct removal and never rot",
+          "items": {
+            "type": "object",
+            "required": ["url", "status"],
+            "additionalProperties": false,
+            "properties": {
+              "url": { "type": "string" },
+              "status": { "type": ["integer", "null"] },
+              "error": { "type": ["string", "null"] },
+              "source_url": { "type": ["string", "null"] },
+              "source_class": { "type": ["string", "null"] }
+            }
+          }
+        },
         "ua_probes": {
           "type": "array",
           "description": "robots-aware: homepage only, only when robots allows the probed token; differential vs browser-UA response from the same IP; cf-mitigated / text/html signals recorded",

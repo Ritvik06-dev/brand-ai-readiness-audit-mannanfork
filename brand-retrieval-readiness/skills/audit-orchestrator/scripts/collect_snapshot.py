@@ -992,6 +992,7 @@ def build_excerpts(pages, sitemap_summary, probes, catalog=None, corroboration=N
     budgets = {"answer-coverage-audit": 24000, "freshness-consistency-audit": 16000,
                "referral-experience-audit": 6000}
     ans_pages, frs_pages, ref_pages, empty_urls = [], [], [], []
+    screen_windows = []
     totals = {"answer-coverage-audit": 0, "freshness-consistency-audit": 0,
               "referral-experience-audit": 0}
 
@@ -1040,6 +1041,15 @@ def build_excerpts(pages, sitemap_summary, probes, catalog=None, corroboration=N
                           "claim_index_subset": capped,
                           "page_stats": page_stats})
         first = sorted(excerpt_locs, key=lambda l: l["char_offset"])[:1]
+        h1 = next((h["text"] for h in heading_tree if h["level"] == 1), None)
+        overlay = bool((p.get("interactive") or {}).get("overlay_in_raw_html"))
+        if first:
+            screen_windows.append({"url": p["requested_url"],
+                                   "window_offset": first[0]["char_offset"],
+                                   "headline": h1, "overlay_present": overlay})
+        else:
+            screen_windows.append({"url": p["requested_url"], "window_offset": None,
+                                   "headline": h1, "overlay_present": overlay})
         first = [{"char_offset": l["char_offset"], "text": l["text"][:600],
                   "location": l.get("location")} for l in first]
         ref_pages.append({"url": p["requested_url"], "page_class": p.get("page_class"), "title": p["title"],
@@ -1047,13 +1057,41 @@ def build_excerpts(pages, sitemap_summary, probes, catalog=None, corroboration=N
                           "main_content_excerpts": bounded(first, "referral-experience-audit"),
                           "claim_index_subset": [],
                           "page_stats": page_stats})
+    appendix_heads, appendix_nav, seen_nav, topic_counts = [], [], set(), {}
+    for p in pages:
+        for h in (p.get("headings") or []):
+            if h.get("level") in (1, 2) and h.get("text") and len(appendix_heads) < 30:
+                appendix_heads.append(h["text"])
+        for link in (p.get("links") or []):
+            t = (link.get("anchor_text") or "").strip()
+            if t and t not in seen_nav and len(appendix_nav) < 20:
+                seen_nav.add(t)
+                appendix_nav.append(t)
+        for c in (p.get("claim_index") or []):
+            topic_counts[c.get("type", "?")] = topic_counts.get(c.get("type", "?"), 0) + 1
+    coverage_appendix = {"headings": appendix_heads, "nav_labels": appendix_nav,
+                         "claim_topics": topic_counts}
+    matrix = {}
+    for p in pages:
+        for c in (p.get("claim_index") or []):
+            e = {"value": c.get("value"), "quote": (c.get("quote") or "")[:200],
+                 "url": p["requested_url"], "location": c.get("location")}
+            if c.get("count"):
+                e["occurrences"] = c["count"]
+            matrix.setdefault(c.get("type", "?"), []).append(e)
+    claim_matrix = []
+    for t in sorted(matrix):
+        if len(json.dumps(claim_matrix)) > 8000:
+            break
+        claim_matrix.append({"type": t, "entries": matrix[t][:8]})
     ans = {"kind": "excerpt", "skill_id": "answer-coverage-audit", "budget_chars": 24000,
            "generated_at": _now(), "pages": ans_pages,
            "pages_without_content": empty_urls,
            "extras": {"checks": checks_for(catalog, "answer-coverage-audit"),
                       "fragment_shape": FRAGMENT_SHAPE,
                       "corroboration": corroboration or {"independent_resolving": 0,
-                                                          "brand_matched": 0}}}
+                                                          "brand_matched": 0},
+                      "coverage_appendix": coverage_appendix}}
     frs = {"kind": "excerpt", "skill_id": "freshness-consistency-audit",
            "budget_chars": 16000, "generated_at": _now(), "pages": frs_pages,
            "pages_without_content": empty_urls,
@@ -1066,12 +1104,14 @@ def build_excerpts(pages, sitemap_summary, probes, catalog=None, corroboration=N
                       "checks": checks_for(catalog, "freshness-consistency-audit"),
                       "fragment_shape": FRAGMENT_SHAPE,
                       "corroboration": corroboration or {"independent_resolving": 0,
-                                                          "brand_matched": 0}}}
+                                                          "brand_matched": 0},
+                      "claim_matrix": claim_matrix}}
     ref = {"kind": "excerpt", "skill_id": "referral-experience-audit",
            "budget_chars": 6000, "generated_at": _now(), "pages": ref_pages,
            "pages_without_content": empty_urls,
            "extras": {"checks": checks_for(catalog, "referral-experience-audit"),
                       "fragment_shape": FRAGMENT_SHAPE,
+                      "screen_windows": screen_windows,
                       "pages_signals": [
                {"url": p["requested_url"],
                 "overlay_in_raw_html": p["interactive"]["overlay_in_raw_html"],
@@ -1138,6 +1178,46 @@ def _blank_page(url, page_class, timing_ms, content_type=None):
                      "video_without_transcript": 0},
         "inline_state": {"payload_keys": [], "contrast_strings": []},
         "claim_index": [], "_structured_dates": [], "_sections": []}
+
+
+def probe_link_rot(fetcher, pages, selected_urls, robot_rows, site_host):
+    """Sample <=5 unfetched same-origin links (rot hides off the crawled set).
+
+    Bounded and deadline-aware; the caller skips when remaining() is low.
+    410 Gone is correct removal and never rot - only 404/5xx count downstream.
+    Timeouts/unresolved never become findings (recorded without status)."""
+    if fetcher.remaining() < 15.0:
+        return []
+    seen, rows = set(), []
+    fetched = {u.rstrip("/") for u in selected_urls}
+    for p in pages:
+        if len(rows) >= 5:
+            break
+        for link in (p.get("links") or []):
+            if len(rows) >= 5:
+                break
+            href = link.get("href") or ""
+            parts = urlparse(href)
+            if parts.scheme not in ("http", "https"):
+                continue
+            if parts.netloc != site_host and not parts.netloc.endswith("." + site_host):
+                continue
+            norm = href.rstrip("/")
+            if norm in seen or norm in fetched:
+                continue
+            try:
+                if robot_rows is not None and not allowed(
+                        robot_rows, "*", parts.path or "/"):
+                    continue
+            except Exception:
+                pass
+            seen.add(norm)
+            res = fetcher.fetch(href, max_bytes=TINY_BYTES)
+            rows.append({"url": href, "status": res.get("status"),
+                         "error": str(res.get("error") or "")[:120] or None,
+                         "source_url": p["requested_url"],
+                         "source_class": p.get("page_class")})
+    return rows
 
 
 def run_collect(args):
@@ -1314,6 +1394,8 @@ def run_collect(args):
     redirects = probe_redirects(fetcher, urlunparse((parts.scheme, parts.netloc, deep, "", "", "")))
     ua_probes = probe_ua(fetcher, base, robot_rows, r_status,
                          home_res.get("status"))
+    link_rot = probe_link_rot(fetcher, pages, [p["requested_url"] for p in pages],
+                              robot_rows, parts.netloc)
     external = resolve_external_presence(fetcher, pages, parts.netloc)
 
     marks.append(("probes", time.time()))
@@ -1356,7 +1438,8 @@ def run_collect(args):
         "external_presence": external,
         "pages": [{k: v for k, v in p.items() if not k.startswith("_")} for p in pages],
         "probes": {"soft_404": soft, "redirect_path_preservation": redirects,
-                   "ua_probes": ua_probes, "llms_txt": llms_txt},
+                   "ua_probes": ua_probes, "llms_txt": llms_txt,
+                   "internal_link_rot": link_rot},
         "excerpts_manifest": [],
     }
 

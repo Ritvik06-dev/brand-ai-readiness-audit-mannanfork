@@ -84,6 +84,9 @@ all eleven checks deterministically:
 11. **ACC-LLMS-TXT-ABSENT** — only when `site_type` includes `docs-developer`: `/llms.txt`
     probe from the snapshot; low severity, framed as agent-navigation opportunity, never
     discoverability.
+12. **ACC-LINK-ROT** — sampled unfetched same-origin links from `probes.internal_link_rot`:
+    410s and timeouts never count; 3+ rotted, or any rotted decision-class path (pricing,
+    product, docs, guide, support, checkout, contact, about), is medium, else low.
 
 ## Findings (authoring rules)
 

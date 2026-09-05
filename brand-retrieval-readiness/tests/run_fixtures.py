@@ -60,13 +60,14 @@ def unit_checks():
     """No-server checks: confusable folding, --passages edge cases, --fix."""
     fails = []
     sys.path.insert(0, os.path.join(ORCH, "scripts"))
-    from collect_snapshot import _fold_confusables, run_passages
+    from collect_snapshot import _fold_confusables, run_passages, build_excerpts
     from types import SimpleNamespace
     if _fold_confusables("2026–27 ‘quoted’\u00a0x") != "2026-27 'quoted' x":
         fails.append("fold confusables mismatch")
     work = tempfile.mkdtemp(prefix="fx-unit-")
     snap = {"pages": [{"requested_url": "http://unit.test/guide",
                          "raw_html": ("<html><head><title>Guide</title></head><body><main>"
+                                      "<h2>Chapter One: Session 2026–27 runs March.</h2>"
                                       "<p>Session 2026–27 runs March.</p></main></body></html>")}]}
     sp = os.path.join(work, "snapshot.json")
     json.dump(snap, open(sp, "w"))
@@ -74,7 +75,7 @@ def unit_checks():
     json.dump({"kind": "passages", "skill_id": "answer-coverage-audit", "questions": [
         {"question_id": "Q-001", "question": "q", "source": "site-derived",
          "expected_page": "http://unit.test/guide",
-         "candidate_passage": "Session 2026–27 runs March."},
+         "candidate_passage": "Chapter One: Session 2026\u201327 runs March."},
         {"question_id": "Q-002", "question": "q", "source": "site-derived",
          "expected_page": "http://unit.test/guide",
          "candidate_passage": "Session 2026-27 runs March."},
@@ -87,8 +88,8 @@ def unit_checks():
         fails.append("run_passages raised: %r" % e)
         return fails
     res = {r["question_id"]: r for r in json.load(open(out))["results"]}
-    if not res["Q-001"]["contiguous"]:
-        fails.append("unit verbatim not contiguous")
+    if not res["Q-001"]["contiguous"] or "heading" not in (res["Q-001"].get("note") or ""):
+        fails.append("unit heading-run not contiguous: %r" % res["Q-001"].get("note"))
     if res["Q-002"]["contiguous"] or "quoting fidelity" not in (res["Q-002"]["note"] or ""):
         fails.append("unit near-match note wrong: %r" % res["Q-002"].get("note"))
     if res["Q-003"]["contiguous"] or "no candidate passage" not in (res["Q-003"]["note"] or ""):
@@ -131,6 +132,87 @@ def unit_checks():
                 fails.append("non-html: pdf page not captured as claim-free skeleton")
     finally:
         stop(doc_server)
+    import copy
+
+    def _build(frag, tag):
+        fp = os.path.join(work, "arb-%s.json" % tag)
+        json.dump(frag, open(fp, "w"))
+        out = os.path.join(work, "arb-%s-report.json" % tag)
+        p = run([sys.executable, os.path.join(ORCH, "scripts", "build_report.py"),
+                 "--fragment", fp, "--site", "unit.test", "--out", out])
+        if p.returncode != 0:
+            fails.append("arb %s build failed: %s" % (tag, (p.stderr or "")[-150:]))
+            return None
+        return json.load(open(out))
+    base_cand = {"title": "T", "severity": "medium", "confidence": "medium",
+                 "evidence": "EVID",
+                 "suggested_action": {"summary": "S", "priority": "medium"}}
+    c = copy.deepcopy(base_cand)
+    c["evidence"] = "Junk URLs return success responses."
+    r = _build({"skill_id": "referral-experience-audit", "mode": "snapshot", "results": [
+        {"check_id": "REF-SOFT-404", "gate": "finding", "urls": ["http://unit.test/"],
+         "evidence_quality": "semantic-judgment", "candidate_finding": c}]}, "probe")
+    if r is not None:
+        if any(f["check_id"] == "REF-SOFT-404" for f in r["findings"]):
+            fails.append("arb probe: status-less probe verdict not demoted")
+        if not any(n["check_id"] == "REF-SOFT-404" for n in r["not_evaluated"]):
+            fails.append("arb probe: demoted check missing from not_evaluated")
+    c = copy.deepcopy(base_cand)
+    c["evidence"] = "1 of 1 sampled sitemap URLs orphaned (example: http://unit.test/)."
+    r = _build({"skill_id": "access-discovery-audit", "mode": "snapshot", "results": [
+        {"check_id": "ACC-SITEMAP-ORPHAN", "gate": "finding", "urls": ["http://unit.test/"],
+         "evidence_quality": "direct-measurement", "candidate_finding": c}],
+        "not_evaluated": [{"check_id": "ACC-SITEMAP-ORPHAN", "reason": "x"}]}, "dup")
+    if r is not None:
+        if any(n["check_id"] == "ACC-SITEMAP-ORPHAN" for n in r["not_evaluated"]):
+            fails.append("arb dup: decided check lingers in not_evaluated")
+        if not any("results verdict kept" in w for w in r["lint_warnings"]):
+            fails.append("arb dup: no kept-verdict warning")
+    c = copy.deepcopy(base_cand)
+    c["evidence"] = "Grid comparison with status 200 pairs with ZZZ-NOTREAL on the same grid."
+    r = _build({"skill_id": "representation-parity-audit", "mode": "snapshot", "results": [
+        {"check_id": "REP-TABLE-SEMANTICS", "gate": "finding", "urls": ["http://unit.test/"],
+         "evidence_quality": "direct-measurement", "candidate_finding": c}]}, "cite")
+    if r is not None:
+        if not any("ZZZ-NOTREAL" in w for w in r["lint_warnings"]):
+            fails.append("arb cite: unknown cited id not warned")
+        if not any(f["check_id"] == "REP-TABLE-SEMANTICS" for f in r["findings"]):
+            fails.append("arb cite: valid finding lost")
+    cat = json.load(open(os.path.join(ORCH, "references", "check_catalog.json")))
+
+    def _pg(url, h1, sec, claims, links):
+        return {"requested_url": url, "page_class": "decision", "title": "T",
+                "headings": [{"level": 1, "text": h1, "id": None}],
+                "_sections": [{"char_offset": 0, "text": sec, "heading": h1}],
+                "claim_index": claims, "tables": {},
+                "interactive": {"overlay_in_raw_html": None, "accordions": 0,
+                                "details_elements": 0, "dialogs": 0},
+                "images": [], "links": links}
+    pa = _pg("http://unit.test/a", "Plans", "Plans start at $29 per month. " * 40,
+              [{"type": "price", "value": "$29",
+                "quote": "Plans start at $29 per month."}],
+              [{"href": "http://unit.test/b", "anchor_text": "Next page"}])
+    pb = _pg("http://unit.test/b", "Plans", "Plans start at $79 per month. " * 40,
+              [{"type": "price", "value": "$79",
+                "quote": "Plans start at $79 per month."}], [])
+    a, f, r = build_excerpts([pa, pb], None,
+                              {"soft_404": None, "redirect_path_preservation": []},
+                              catalog=cat)
+    app = a["extras"]["coverage_appendix"]
+    if app["claim_topics"].get("price") != 2:
+        fails.append("appendix claim_topics wrong: %r" % app["claim_topics"])
+    if "Plans" not in app["headings"] or "Next page" not in app["nav_labels"]:
+        fails.append("appendix inventory wrong")
+    groups = {g["type"]: g["entries"] for g in f["extras"]["claim_matrix"]}
+    if sorted(e["url"] for e in groups.get("price", [])) != \
+            ["http://unit.test/a", "http://unit.test/b"]:
+        fails.append("matrix price group wrong")
+    if len(json.dumps(f["extras"]["claim_matrix"])) > 9000:
+        fails.append("matrix exceeds byte cap")
+    w = r["extras"]["screen_windows"]
+    if len(w) != 2 or w[0]["window_offset"] != 0 or w[0]["headline"] != "Plans" \
+            or w[0]["overlay_present"] is not False:
+        fails.append("screen_windows wrong: %r" % (w,))
     return fails
 
 
@@ -145,10 +227,13 @@ def main():
         work = tempfile.mkdtemp(prefix="fx-")
         server, url = start(scenario)
         try:
-            proc = run([sys.executable, os.path.join(ORCH, "scripts", "collect_snapshot.py"),
-                        "--url", url, "--out", os.path.join(work, "snapshot.json"),
-                        "--allow-private", "--site-type", scenario["site_type"],
-                        "--capabilities", "web_fetch"])
+            cmd = [sys.executable, os.path.join(ORCH, "scripts", "collect_snapshot.py"),
+                   "--url", url, "--out", os.path.join(work, "snapshot.json"),
+                   "--allow-private", "--site-type", scenario["site_type"],
+                   "--capabilities", "web_fetch"]
+            if "max_pages" in scenario:
+                cmd += ["--max-pages", str(scenario["max_pages"])]
+            proc = run(cmd)
             if proc.returncode != 0:
                 failures.append("%s: collector failed: %s" % (name, proc.stderr[-300:]))
                 continue

@@ -159,6 +159,7 @@ def main():
     all_reported = set()
     lint_warnings = []
     limitations_extra = []
+    fragments_loaded = 0
     for frag_path in args.fragment:
         try:
             frag = load_json(frag_path)
@@ -181,6 +182,7 @@ def main():
                                      % (os.path.basename(frag_path), sid or "unknown skill"))
             continue
         skill_ids.add(frag["skill_id"])
+        fragments_loaded += 1
         if not frag.get("results") and not frag.get("not_evaluated"):
             lint_warnings.append("fragment %s from %s is silent (0 results and 0 "
                                  "not_evaluated): the specialist contributed nothing; its "
@@ -212,6 +214,20 @@ def main():
                     "check_id": result["check_id"],
                     "reason": "specialist reported not_evaluated (see fragment)",
                 })
+                continue
+            PROBE_STATUS_CHECKS = ("REF-SOFT-404", "ACC-BOT-CHALLENGE")
+            if result["check_id"] in PROBE_STATUS_CHECKS and not re.search(
+                    r"\b\d{3}\b", (result.get("candidate_finding") or {}).get("evidence", "")):
+                # A probe verdict quoting no HTTP status is assertion-shaped:
+                # the observation (path + measured status) is the evidence.
+                not_evaluated.append({
+                    "check_id": result["check_id"],
+                    "reason": ("probe finding records no HTTP status; treated as "
+                               "not_evaluated (see fragment)"),
+                })
+                lint_warnings.append("fragment %s %s records a probe verdict without a status "
+                                     "code; downgraded to not_evaluated"
+                                     % (frag_path, result["check_id"]))
                 continue
             cand = result["candidate_finding"]
             action = {"summary": cand["suggested_action"]["summary"],
@@ -270,9 +286,12 @@ def main():
         findings = kept
         for u in sorted(unknown_ids):
             lint_warnings.append("unknown check_id %s dropped to not_evaluated" % u)
-    for ne in not_evaluated:
-        if ne["check_id"] not in checks_by_id:
-            lint_warnings.append("not_evaluated entry references unknown check_id %s" % ne["check_id"])
+    pair_pat = re.compile(r"\b[A-Z]{3}(?:-[A-Z0-9]+)+\b")
+    for f in findings:
+        for cid in sorted(set(pair_pat.findall(f.get("evidence", ""))) - {f["check_id"]}):
+            if cid not in checks_by_id:
+                lint_warnings.append("%s cites unknown check_id %s in evidence"
+                                     % (f["check_id"], cid))
     unknown = sorted(used_ids - set(checks_by_id))
     if unknown:
         limitations_extra.append("Unknown check ids were reported and dropped: %s." % ", ".join(unknown))
@@ -287,6 +306,17 @@ def main():
         seen_ne.add(ne["check_id"])
         deduped_ne.append(ne)
     not_evaluated = deduped_ne
+
+    # A check decided in results must not linger in not_evaluated: results win.
+    decided = {f["check_id"] for f in findings}
+    kept_ne = []
+    for ne in not_evaluated:
+        if ne["check_id"] in decided:
+            lint_warnings.append("%s also listed in not_evaluated; results verdict kept"
+                                 % ne["check_id"])
+            continue
+        kept_ne.append(ne)
+    not_evaluated = kept_ne
 
     # Coverage backfill: every catalog check no fragment reported lands in
     # not_evaluated, so the report's coverage claim is complete and honest.
@@ -393,7 +423,9 @@ def main():
     limitations = (["Single-skill degraded mode: no specialist fragments were available;"
                     " specialists_resolved = 0 and the judgment checks are not_evaluated."]
                    if args.degraded else [])
-    limitations.extend(limitations_extra)
+    if not fragments_loaded and not args.degraded:
+        limitations.append("No specialist fragments were loaded; every check is "
+                           "not_evaluated by backfill, not by judgment.")
     no_capture = (snapshot_present and pages_selected == 0) or (args.degraded and not snapshot_present)
     if no_capture:
         limitations.append("No pages were captured (unreachable site or total capture failure); "
@@ -444,6 +476,12 @@ FORBIDDEN_PATTERNS = [
 ]
 
 
+IDENTIFIER_PATTERNS = [
+    (r"is_soft_404", "snapshot field path leaked into evidence (state the observation in words)"),
+    (r"snapshot\s*\.\s*[a-z_]+", "snapshot field path leaked into evidence (state the observation in words)"),
+]
+
+
 def lint_report(report):
     """Never-claim lint: WARN only, never fails - quoted evidence or the site's
     own prose can legitimately contain trigger strings (PHASE1 fix, build review)."""
@@ -457,6 +495,10 @@ def lint_report(report):
         for pattern, why in FORBIDDEN_PATTERNS:
             if re.search(pattern, text, re.I):
                 warnings.append("%s: %s (warning only - verify in context)" % (field, why))
+    for f in report["findings"]:
+        for pattern, why in IDENTIFIER_PATTERNS:
+            if re.search(pattern, f.get("evidence", "")):
+                warnings.append("finding.evidence: %s (warning only - verify in context)" % why)
     return warnings
 
 

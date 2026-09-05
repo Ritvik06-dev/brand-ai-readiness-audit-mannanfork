@@ -111,7 +111,7 @@ SCENARIOS = [
         "pages": {"/": P(PAGE.format(title="Acme", content=HOME_LINKS + LIPSUM)),
                   "/pricing": P(PAGE.format(title="Pricing", content=LIPSUM))},
         "missing_path": {"status": 404, "body": HELPFUL404_BODY},
-        "expected_findings": {"ACC-ROBOTS-ROLE": {"severity": "critical", "confidence": "high"}},
+        "expected_findings": {"ACC-LINK-ROT": {"severity": "medium"}, "ACC-ROBOTS-ROLE": {"severity": "critical", "confidence": "high"}},
         "expected_non_findings": ["ACC-ROBOTS-UNAVAILABLE", "ACC-INDEX-CONTROL",
                                   "ACC-BOT-CHALLENGE", "ACC-SITEMAP-INVALID",
                                   "ACC-LLMS-TXT-ABSENT"],
@@ -123,7 +123,7 @@ SCENARIOS = [
         "pages": {"/": P(PAGE.format(title="Acme", content=HOME_LINKS + LIPSUM)),
                   "/pricing": P(PAGE.format(title="Pricing", content=LIPSUM))},
         "missing_path": {"status": 404, "body": HELPFUL404_BODY},
-        "expected_findings": {},
+        "expected_findings": {"ACC-LINK-ROT": {"severity": "medium"}, },
         "expected_non_findings": ["ACC-ROBOTS-ROLE", "ACC-ROBOTS-UNAVAILABLE",
                                   "ACC-BOT-CHALLENGE"],
         "note": "training-bot block is policy, not an outage - the single most important non-finding",
@@ -134,7 +134,7 @@ SCENARIOS = [
         "robots": {"status": 503, "body": "Service Unavailable"},
         "pages": {"/": P(PAGE.format(title="Acme", content=HOME_LINKS + LIPSUM))},
         "missing_path": {"status": 404, "body": HELPFUL404_BODY},
-        "expected_findings": {"ACC-ROBOTS-UNAVAILABLE": {"severity": "high", "confidence": "high"}},
+        "expected_findings": {"ACC-LINK-ROT": {"severity": "medium"}, "ACC-ROBOTS-UNAVAILABLE": {"severity": "high", "confidence": "high"}},
         "expected_non_findings": ["ACC-ROBOTS-ROLE"],
         "snapshot_asserts": {"robots.attempts": 2, "robots.status": "error"},
     },
@@ -144,7 +144,7 @@ SCENARIOS = [
         "robots": {"status": 404, "body": "not found"},
         "pages": {"/": P(PAGE.format(title="Acme", content=HOME_LINKS + LIPSUM))},
         "missing_path": {"status": 404, "body": HELPFUL404_BODY},
-        "expected_findings": {},
+        "expected_findings": {"ACC-LINK-ROT": {"severity": "medium"}, },
         "expected_non_findings": ["ACC-ROBOTS-UNAVAILABLE", "ACC-ROBOTS-ROLE"],
         "snapshot_asserts": {"robots.status": "not_found"},
     },
@@ -272,7 +272,7 @@ SCENARIOS = [
         "robots": {"status": 200, "body": "User-agent: *\nAllow: /\n"},
         "pages": {"/": P(PAGE.format(title="Acme", content=HOME_LINKS + LIPSUM))},
         "missing_path": {"status": 404, "body": HELPFUL404_BODY},
-        "expected_findings": {},
+        "expected_findings": {"ACC-LINK-ROT": {"severity": "medium"}, },
         "expected_non_findings": [],
         "snapshot_asserts": {"probes.soft_404.is_soft_404": False,
                              "probes.soft_404.body_quality.has_search": True},
@@ -286,7 +286,7 @@ SCENARIOS = [
         "sitemap_body": ("<?xml version=\"1.0\"?><urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">"
                          + "".join("<url><loc>http://{HOST}/%d</loc><lastmod>2026-09-01</lastmod></url>" % i
                                    for i in range(5)) + "</urlset>"),
-        "expected_findings": {},
+        "expected_findings": {"ACC-LINK-ROT": {"severity": "medium"}, },
         "expected_non_findings": [],
         "snapshot_asserts": {"sitemap.lastmod_distinct_count": 1},
     },
@@ -299,7 +299,7 @@ SCENARIOS = [
         "sitemap_body": ("<?xml version=\"1.0\"?><urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">"
                          + "".join("<url><loc>http://{HOST}/%d</loc><lastmod>2026-08-%02d</lastmod></url>" % (i, i + 1)
                                    for i in range(5)) + "</urlset>"),
-        "expected_findings": {},
+        "expected_findings": {"ACC-LINK-ROT": {"severity": "medium"}, },
         "expected_non_findings": [],
         "snapshot_asserts": {"sitemap.lastmod_distinct_count": 5},
     },
@@ -313,7 +313,7 @@ SCENARIOS = [
                                        "body": CHALLENGE_BODY},
                      "PerplexityBot": {"status": 403, "headers": {"cf-mitigated": "challenge"},
                                        "body": CHALLENGE_BODY}},
-        "expected_findings": {"ACC-BOT-CHALLENGE": {"severity": "high", "confidence": "medium"}},
+        "expected_findings": {"ACC-LINK-ROT": {"severity": "medium"}, "ACC-BOT-CHALLENGE": {"severity": "high", "confidence": "medium"}},
         "expected_non_findings": [],
         "note": "severity ceiling high at medium confidence - the rule-1 clamp must never fire here",
     },
@@ -381,7 +381,7 @@ SCENARIOS.extend([
                       "/shop": {"status": 302, "location": "/shop?ir=1"},
                       "/shop?ir=1": {"status": 302, "location": "/shop?ir=1&bc=DB"}},
         "missing_path": {"status": 404, "body": HELPFUL404_BODY},
-        "expected_findings": {},
+        "expected_findings": {"ACC-LINK-ROT": {"severity": "medium"}, },
         "expected_non_findings": ["ACC-REDIRECT-LOOP"],
         "note": "terminating canonicalization chains (apex->www->slash, slash-add, "
                 "query funnels) are site behavior, not loops - the beam.cloud and "
@@ -438,5 +438,21 @@ SCENARIOS.extend([
         "note": "post-step edge cases (live-class specimens): verbatim passes, a hyphen-for-endash"
                 " retype earns the quoting-fidelity note instead of a misleading not-found, and an"
                 " omitted candidate_passage records no-candidate instead of crashing (KeyError)",
+    },
+    {
+        "name": "27-link-rot",
+        "site_type": "saas",
+        "max_pages": 1,
+        "robots": {"status": 200, "body": "User-agent: *\nAllow: /\n"},
+        "pages": {"/": P(PAGE.format(title="Acme", content=(
+                        '<nav><a href="/ok">Ok</a> <a href="/dead">Dead</a></nav>' + LIPSUM))),
+                  "/ok": P(PAGE.format(title="Ok", content=LIPSUM))},
+        "missing_path": {"status": 404, "body": HELPFUL404_BODY},
+        "expected_findings": {"ACC-LINK-ROT": {"severity": "low"}},
+        "expected_non_findings": [],
+        "snapshot_asserts": {"probes.internal_link_rot.0.status": 200,
+                             "probes.internal_link_rot.1.status": 404},
+        "note": "unfetched same-origin 404 is rot (medium from the homepage); 410s, timeouts "
+                "and external links never count",
     },
 ])
