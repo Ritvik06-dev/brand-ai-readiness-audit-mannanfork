@@ -55,12 +55,12 @@ from there with explicit paths.
   write (its fragment) — at most 3 tool calls each. Report build is at most 2 calls. Under time
   pressure, emit partial findings with `not_evaluated` — a valid partial report always beats an
   overrun.
-- **One pass, no polish (this is what fits the clock):** judge each specialist from its
-  excerpt in a single authoring round and write the fragment once. Do not re-read inputs,
-  re-derive script outputs, or revise across multiple passes — a complete-enough fragment now
-  beats a perfect one never. If evidence is missing, emit partial findings with the rest
-  `not_evaluated` and move on. Shed in this order when forced to choose: off-site probes,
-  then `opportunities`, then whole judgments to `not_evaluated` — never the report itself.
+- **Single pass:** judge each specialist from its excerpt in one authoring round and write
+  the fragment once. Do not re-read inputs, re-derive script outputs, or revise across
+  multiple passes — a complete-enough fragment now beats a perfect one never. If evidence is
+  missing, emit partial findings with the rest `not_evaluated` and move on. Shed in this
+  order: off-site probes, then `opportunities`, then whole judgments to `not_evaluated` —
+  never the report itself.
 - **Context:** NEVER read `audit/snapshot.json` — it contains raw HTML and will overflow your
   context. Only scripts touch it. You read excerpt files and script stdout only. The command
   strings in steps 4–6 are complete: do not read script or registry source to reconstruct
