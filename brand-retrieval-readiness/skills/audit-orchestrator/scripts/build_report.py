@@ -376,10 +376,13 @@ def main():
         "specialists_requested": len({c.get("skill_id") for c in catalog.get("checks", [])}),
         "capabilities_unavailable": [],
     }
-    if args.snapshot and os.path.exists(args.snapshot):
+    snapshot_present = bool(args.snapshot and os.path.exists(args.snapshot))
+    pages_selected = 0
+    if snapshot_present:
         snap = load_json(args.snapshot)
         coverage["pages_discovered"] = snap["discovery"]["candidates_count"]
         coverage["pages_selected"] = len(snap["discovery"]["selected"])
+        pages_selected = coverage["pages_selected"]
         coverage["raw_fetches_succeeded"] = len(snap["pages"])
         coverage["rendered_pages"] = 0
         caps = snap.get("capabilities", {})
@@ -391,12 +394,15 @@ def main():
                     " specialists_resolved = 0 and the judgment checks are not_evaluated."]
                    if args.degraded else [])
     limitations.extend(limitations_extra)
+    if snapshot_present and pages_selected == 0:
+        limitations.append("No pages were captured (unreachable site or total capture failure); "
+                           "runnable checks are not_evaluated and there is nothing to find.")
     limitations.append("The opportunities[] proactive set lands with the remediation"
                        " playbook (Phase 6).")
     report = {
         "site": args.site,
         "audited_at": now,
-        "audit_status": "complete",
+        "audit_status": ("partial" if snapshot_present and pages_selected == 0 else "complete"),
         "report_schema_version": "1.0",
         "marketplace_version": args.marketplace_version,
         "coverage": coverage,

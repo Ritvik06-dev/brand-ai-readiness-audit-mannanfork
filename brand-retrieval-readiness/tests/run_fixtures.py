@@ -106,6 +106,31 @@ def unit_checks():
         if (fixed.get("mode") != "snapshot" or r.get("urls") != ["http://unit.test/guide"]
                 or "observations" in r or "affected_urls" in r):
             fails.append("--fix corrections wrong: %r" % r)
+    doc_server, doc_url = start({
+        "robots": {"status": 404, "body": ""},
+        "pages": {"/": {"status": 200, "headers": {},
+                        "body": ("<html><head><title>Home</title></head><body>"
+                                 "<nav><a href=\"/doc\">Doc</a></nav><p>Welcome.</p></body></html>")},
+                  "/doc": {"status": 200, "headers": {"Content-Type": "application/pdf"},
+                           "body": "%PDF-1.4 \x00 binary garbage $999 price token"}},
+        "missing_path": None})
+    try:
+        dout = os.path.join(work, "docsnap.json")
+        p = run([sys.executable, os.path.join(ORCH, "scripts", "collect_snapshot.py"),
+                 "--url", doc_url, "--out", dout, "--allow-private",
+                 "--site-type", "saas", "--capabilities", "web_fetch"])
+        if p.returncode != 0:
+            fails.append("non-html collector failed: %s" % (p.stderr or "")[-200:])
+        else:
+            dsnap = json.load(open(dout))
+            if "$999" in json.dumps(dsnap["pages"]):
+                fails.append("non-html: pdf garbage reached page records")
+            pdf_pages = [pg for pg in dsnap["pages"]
+                         if (pg.get("content_type") or "").startswith("application/pdf")]
+            if not pdf_pages or any(pg.get("claim_index") for pg in pdf_pages):
+                fails.append("non-html: pdf page not captured as claim-free skeleton")
+    finally:
+        stop(doc_server)
     return fails
 
 

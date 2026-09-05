@@ -1112,6 +1112,30 @@ def discover_candidates(homepage_res, extractor, sitemap_urls, fetcher, base):
     return candidates
 
 
+def _blank_page(url, page_class, timing_ms, content_type=None):
+    """Page record for a fetch with nothing parsable (non-HTML, exhausted chain).
+
+    Specialists see an uncaptured page with its content type; nothing enters
+    the claim index."""
+    return {
+        "requested_url": url, "final_url": url,
+        "status": 0, "redirect_chain": [],
+        "content_type": content_type, "bytes": 0, "timing_ms": timing_ms,
+        "raw_html": "", "visible_text": "", "title": None,
+        "meta_description": None, "canonical": None, "lang": None,
+        "hreflang": [], "robots_meta": None, "x_robots_tag": None,
+        "headers": {}, "sitemap_lastmod": None, "page_class": page_class,
+        "headings": [], "links": [], "jsonld": [], "microdata_types": [],
+        "open_graph": {}, "images": [],
+        "tables": {"semantic_count": 0, "div_grid_candidates": 0},
+        "interactive": {"accordions": 0, "dialogs": 0, "details_elements": 0,
+                        "overlay_in_raw_html": None},
+        "non_text": {"canvas": 0, "svg_without_text": 0,
+                     "video_without_transcript": 0},
+        "inline_state": {"payload_keys": [], "contrast_strings": []},
+        "claim_index": [], "_structured_dates": [], "_sections": []}
+
+
 def run_collect(args):
     started = time.time()
     marks = [("start", started)]
@@ -1253,6 +1277,15 @@ def run_collect(args):
                     "claim_index": [], "_structured_dates": [], "_sections": []})
             else:
                 notes.append("page fetch failed: %s (%s)" % (u, res.get("error") or res.get("status")))
+            continue
+        ctype = ((res.get("headers") or {}).get("content-type") or "")
+        if ctype and "html" not in ctype.lower() and "xml" not in ctype.lower():
+            # binary or foreign content (PDF, images, downloads): decoding it
+            # feeds garbage claims into the index. Record the fetch, skip the
+            # parse - specialists see an uncaptured page with its content type.
+            notes.append("non-HTML content skipped: %s (%s)" % (u, ctype.split(";")[0]))
+            pages.append(_blank_page(u, labels.get(u, "other"), res.get("timing_ms"),
+                                      content_type=ctype.split(";")[0]))
             continue
         ex = PageExtractor(u)
         ex.feed(res["body"].decode("utf-8", "replace"))
@@ -1432,6 +1465,12 @@ def run_passages(args):
             ex.finalize()
             want = " ".join((q.get("candidate_passage") or "").split())
             blocks = [" ".join(b.split()) for b in ex.blocks]
+            # headings and link anchors never enter blocks (handle_data routes
+            # them aside), but each is a single rendered run - checkable here.
+            head_runs = [" ".join(h.get("text", "").split()) for h in (ex.headings or [])]
+            head_runs += [" ".join((a.get("anchor_text") or "").split())
+                          for a in (ex.links or [])]
+            head_runs = [t for t in head_runs if t]
             contiguous = any(want and want in b for b in blocks)
             if not contiguous and want:
                 # scroll-to-text range fragments match across consecutive block
@@ -1445,6 +1484,13 @@ def run_passages(args):
                 if want and want in full:
                     note = ("passage text is present on the page but split across blocks "
                             "or interleaved - not one contiguous run")
+                elif want and want in head_runs:
+                    contiguous = True
+                    note = ("passage matches a heading or link run - "
+                            "a single highlightable run")
+                elif want and ex.title and want == " ".join(ex.title.split()):
+                    note = ("passage matches the document title, which is not "
+                            "a highlightable body run - quote body text instead")
                 elif want and _fold_confusables(want) in _fold_confusables(full):
                     note = ("passage matches page text up to punctuation/whitespace variants "
                             "(e.g. dashes or quotes) - likely quoting fidelity, not a site defect; "

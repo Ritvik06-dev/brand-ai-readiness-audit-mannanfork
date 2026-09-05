@@ -70,7 +70,9 @@ visitor, judged here because they land on the citation).
      that window confirms; an answer beyond it, or present only after interaction, is the
      flag case. State the proxy in the evidence and keep confidence at medium; a declared
      browser capability upgrades to direct observation. The slogan H1 with the fact 900 words
-     down is the flag case, not the pass case.
+     down is the flag case, not the pass case. On news- and publisher-style pages a headline
+     (h1/h2) stating the answer with its qualifier counts as confirmation — headlines are
+     the confirmable surface there; name the confirming surface in the evidence.
    - **REF-COLLAPSED-ANSWER** — the accordion inversion: content in the DOM but collapsed by
      default is fine for the machine and hostile to the human who arrived for exactly that
      fact (use `pages_signals` accordions/details/dialogs plus the excerpts). The

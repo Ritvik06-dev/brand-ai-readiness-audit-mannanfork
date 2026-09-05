@@ -405,8 +405,10 @@ SCENARIOS.extend([
         "site_type": "saas",
         "robots": {"status": 200, "body": "User-agent: *\nAllow: /\n"},
         "pages": {"/": P(PAGE.format(title="Acme", content=(
-                        '<nav><a href="/guide">Guide</a></nav>' + LIPSUM))),
-                  "/guide": P(PASSAGES_BODY)},
+                        '<nav><a href="/guide">Guide</a> <a href="/titley">Titley</a></nav>' + LIPSUM))),
+                  "/guide": P(PASSAGES_BODY),
+                  "/titley": P("<html><head><title>Acme Title Only Words</title></head>"
+                                "<body><h1>Other Heading</h1><p>" + LIPSUM + "</p></body></html>")},
         "missing_path": {"status": 404, "body": HELPFUL404_BODY},
         "expected_findings": {},
         "expected_non_findings": [],
@@ -419,11 +421,19 @@ SCENARIOS.extend([
              "candidate_passage": "The Academic Session 2026-27 runs from March 05, 2026 to March 31, 2026."},
             {"question_id": "Q-003", "question": "Is there an evening program?",
              "source": "site-derived", "expected_page": "{BASE}/guide"},
+            {"question_id": "Q-004", "question": "What is this guide?",
+             "source": "site-derived", "expected_page": "{BASE}/guide",
+             "candidate_passage": "Acme Guide"},
+            {"question_id": "Q-005", "question": "What is the document title?",
+             "source": "site-derived", "expected_page": "{BASE}/titley",
+             "candidate_passage": "Acme Title Only Words"},
         ],
         "passages_asserts": {
             "Q-001": {"contiguous": True},
             "Q-002": {"contiguous": False, "note_contains": "quoting fidelity"},
             "Q-003": {"contiguous": False, "note_contains": "no candidate passage"},
+            "Q-004": {"contiguous": True},
+            "Q-005": {"contiguous": False, "note_contains": "document title"},
         },
         "note": "post-step edge cases (live-class specimens): verbatim passes, a hyphen-for-endash"
                 " retype earns the quoting-fidelity note instead of a misleading not-found, and an"
