@@ -2,6 +2,7 @@
 name: freshness-consistency-audit
 description: Judge freshness and version integrity from the snapshot's claim index - cross-page contradictions on prices, plans, versions and hours; date conflicts between visible text, structured dateModified and sitemap lastmod; impossible dates; uniform build-stamp lastmod; and superseded products, versions or deprecated docs that stay linked and indexable without supersession signals. Normally invoked by audit-orchestrator; use alone only when asked specifically about staleness, dates, or versioning concerns.
 license: MIT
+allowed-tools: Bash Read Write
 metadata:
   version: "1.0.0"
 ---
@@ -30,12 +31,13 @@ conflicts are the measurable, on-site form of that failure.
 
 - Prepared excerpt file `audit/excerpts/freshness-consistency-audit.json` (one read): per page
   `url`, `page_class`, `title`, `heading_tree` (context for adjudication), excerpts, and
-  `claim_index_subset`; extras carry `sitemap` (lastmod present/distinct counts + sample) and
-  `page_dates` (structured dates per page + visible date claims).
+  `claim_index_subset` (repeated identical claims arrive capped with `count`); extras carry
+  `sitemap` (lastmod present/distinct counts + sample) and `page_dates` (structured dates
+  per page + visible date claims). `extras.checks` carries the check templates;
+  `extras.fragment_shape` the fragment keys.
 - Snapshot context relayed by the orchestrator when needed: `sitemap.lastmod_distinct_count`.
-- Runtime contract: one read, one judgment, one write — at most 3 tool calls; partial findings
-  with `not_evaluated` over overrun. Judge from the excerpt — it carries everything rated to
-  this skill's checks; re-reading the full snapshot duplicates work the scripts already did.
+- Runtime contract: judge from the excerpt only, in a single pass, and write the fragment
+  once; emit partial findings with `not_evaluated` rather than overrun.
 
 ## Procedure
 
@@ -92,6 +94,5 @@ conflicts are the measurable, on-site form of that failure.
   `../audit-orchestrator/references/finding_fragment.json`. Never assign `F-` ids; the
   orchestrator does. Done means valid: the fragment parses as JSON and matches
   `finding_fragment.json` before handoff (`python3 <orchestrator>/scripts/validate_fragment.py <fragment>` (checks the schema, not just syntax)) — an
-  unvalidated fragment is not a handoff. Building it programmatically (e.g. `json.dump`)
-  avoids the most common failure here. Report which pages supplied each side of every conflict so the
+  unvalidated fragment is not a handoff. Building it programmatically (e.g. `json.dump`). If writing JSON through a shell heredoc instead, quote the delimiter (`<<'EOF'`). Report which pages supplied each side of every conflict so the
   remediation can name the source of truth.

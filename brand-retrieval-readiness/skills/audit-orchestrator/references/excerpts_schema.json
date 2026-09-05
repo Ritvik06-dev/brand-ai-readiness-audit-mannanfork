@@ -19,6 +19,11 @@
         "budget_chars": { "type": "integer", "minimum": 1, "description": "total excerpt budget for this skill's input file" },
         "generated_at": { "type": "string", "format": "date-time" },
         "pages": { "type": "array", "maxItems": 8, "items": { "$ref": "#/definitions/excerpt_page" } },
+        "pages_without_content": {
+          "type": "array",
+          "description": "sampled page URLs with no extractable headings, excerpts, or claims — collapsed here instead of repeated as empty entries",
+          "items": { "type": "string" }
+        },
         "extras": {
           "type": "object",
           "description": "per-skill additions: referral-experience <- probes subset (soft_404, redirect_path_preservation) plus the passages_checked results; freshness-consistency <- sitemap lastmod summary + claim_index across pages; answer-coverage <- nothing extra; offsite-visibility <- the prompt set (written by the --passages post-step)",
@@ -72,8 +77,25 @@
               "type": { "type": "string" },
               "value": { "type": "string" },
               "quote": { "type": "string" },
-              "location": { "type": ["string", "null"] }
+              "location": { "type": ["string", "null"] },
+              "count": { "type": "integer", "minimum": 2, "description": "repeated identical claims collapsed into one row (e.g. a date strip); quote is the first occurrence" },
+              "sample_locations": { "type": "array", "items": { "type": "string" }, "description": "up to 3 further locations of the repeated claim" }
             }
+          }
+        },
+        "page_stats": {
+          "type": "object",
+          "description": "precomputed counts so judges never re-derive them from the snapshot",
+          "additionalProperties": false,
+          "properties": {
+            "visible_chars": { "type": "integer", "minimum": 0 },
+            "heading_count": { "type": "integer", "minimum": 0 },
+            "image_count": { "type": "integer", "minimum": 0 },
+            "table_semantic_count": { "type": "integer", "minimum": 0 },
+            "div_grid_candidates": { "type": "integer", "minimum": 0 },
+            "accordions": { "type": "integer", "minimum": 0 },
+            "details_elements": { "type": "integer", "minimum": 0 },
+            "dialogs": { "type": "integer", "minimum": 0 }
           }
         }
       }

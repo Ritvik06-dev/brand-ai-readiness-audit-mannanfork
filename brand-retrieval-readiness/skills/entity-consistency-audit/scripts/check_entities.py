@@ -711,6 +711,13 @@ def summarize(results):
         lines.append("  [%s/%s] %s (%s)" % (c["severity"], c["confidence"],
                                             c["title"],
                                             ", ".join(r.get("urls", []))[:100]))
+    for r in results:
+        if r.get("check_id") == "ENT-AMBIGUOUS-NAME":
+            obs = r.get("observations", {}) or {}
+            lines.append("  ambiguous-name prepared: candidate=%r variants=%d "
+                         "(gate=%s; orchestrator completes per SKILL.md)"
+                         % (obs.get("candidate_name"),
+                            len(obs.get("name_variants", [])), r.get("gate")))
     return "\n".join(lines)
 
 

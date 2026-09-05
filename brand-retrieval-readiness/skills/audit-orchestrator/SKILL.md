@@ -30,7 +30,7 @@ All artifacts go to a working directory `./audit/`: `snapshot.json`, `excerpts/`
 `passages.json`, `passages_checked.json`, `report.json`. Create it as needed and run scripts
 from there with explicit paths.
 
-## Paths (resolve these before step 2 — a wrong base breaks every path below)
+## Paths (resolve these before step 2)
 
 - `<orchestrator>` = the directory containing this SKILL.md (the audit-orchestrator skill
   folder). Every `<orchestrator>/scripts/...` and `<orchestrator>/references/...` path below
@@ -51,18 +51,14 @@ from there with explicit paths.
   requests. Do not retry it; read its printed notes instead.
 - **Off-site probes:** hard sub-budget of <= 6 queries, and the first thing shed at the
   deadline. Absence of a search capability means `not_evaluated`, never a finding.
-- **Model turns:** each judgment specialist is ONE read (its excerpt file) + ONE judgment + ONE
-  write (its fragment) — at most 3 tool calls each. Report build is at most 2 calls. Under time
-  pressure, emit partial findings with `not_evaluated` — a valid partial report always beats an
-  overrun.
-- **Single pass:** judge each specialist from its excerpt in one authoring round and write
-  the fragment once. Do not re-read inputs, re-derive script outputs, or revise across
-  multiple passes — a complete-enough fragment now beats a perfect one never. If evidence is
+- **Model turns:** judge each specialist from its excerpt in a single pass and write the
+  fragment once; run the report build once. Emit partial findings with `not_evaluated`
+  rather than overrun — a valid partial report always beats an overrun. Do not re-read
+  inputs, re-derive script outputs, or revise across multiple passes. If evidence is
   missing, emit partial findings with the rest `not_evaluated` and move on. Shed in this
   order: off-site probes, then `opportunities`, then whole judgments to `not_evaluated` —
   never the report itself.
-- **Context:** NEVER read `audit/snapshot.json` — it contains raw HTML and will overflow your
-  context. Only scripts touch it. You read excerpt files and script stdout only. The command
+- **Context:** Do not read `audit/snapshot.json`. Only scripts touch it. You read excerpt files and script stdout only. The command
   strings in steps 4–6 are complete: do not read script or registry source to reconstruct
   them, and do not re-read schemas before judging — schemas are the merge's contract and
   your excerpts already conform. Any script output larger than a screen means you called
@@ -95,7 +91,8 @@ from there with explicit paths.
 4. **Scripted specialists** (access-discovery-audit, representation-parity-audit,
    entity-consistency-audit): run the script named in that skill's SKILL.md with
    `--snapshot ./audit/snapshot.json --out ./audit/findings/<skill-id>.json`. Read only its
-   printed summary. If a specialist cannot be resolved, note it and continue.
+   printed summary. If a specialist cannot be resolved, note it and continue. If a referenced script file is
+   absent, say so explicitly and treat that skill as not_evaluated — never invent its output.
    Then **complete semantic gates**: reopen each fragment once (fragments are small JSON —
    this is not the snapshot) and finish any result carrying `gate: "pass"` with
    `evidence_quality: "semantic-judgment"` — currently `ENT-AMBIGUOUS-NAME`: follow that
@@ -104,7 +101,7 @@ from there with explicit paths.
 
 5. **Judgment specialists** (in manifest order). Each fragment must validate against
    `finding_fragment.json` before step 6 (each SKILL.md states the gate); the merge salvages
-   anything invalid to `not_evaluated` with a lint warning — a silent skill, never a failed audit.
+   anything invalid to `not_evaluated` with a lint warning.
    Before authoring each specialist's fragment, read that specialist's SKILL.md; quote only
    `check_id`s listed for it in `references/check_catalog.json` — ids outside the catalog do
    not exist. Remove helper/scratch scripts from the working directory before step 6.
@@ -124,24 +121,30 @@ from there with explicit paths.
    - `referral-experience-audit` (wave 2): read `audit/excerpts/referral-experience-audit.json`
      once, plus `audit/passages_checked.json`; write its fragment.
 
-6. **Report.** Run:
+6. **Report.** First validate every fragment in one pass (`validate_fragment.py` over each
+   file in `./audit/findings/`); fix any failure and re-validate before merging. Then run:
    `python3 <orchestrator>/scripts/build_report.py --site <host> --out ./audit/report.json --snapshot ./audit/snapshot.json --fragment ./audit/findings/<each>.json`
    It assigns finding IDs, dedups root causes, backfills `not_evaluated`, lints forbidden
    claims, validates the report schema, and prints the human summary.
 
-7. **Emit.** Present the human summary verbatim, then the report JSON. State `audit_status`,
-   `coverage`, and every `not_evaluated` check explicitly — "not evaluated" is never a defect
-   and never silently dropped.
+7. **Emit.** Read `./audit/report.json` once for the human summary below — the build already
+   validated its schema — then present the summary verbatim, then the report JSON. State
+   `audit_status`, `coverage`, and every `not_evaluated` check explicitly — "not evaluated"
+   is never a defect and never silently dropped. After a valid report: stop. No further
+   verification passes.
 
 ## Parallel dispatch (optional acceleration)
 
-Steps 4–5 above are the normative path and work in any harness: run the waves in order in
-this session. Where the harness supports concurrent subagents, the same waves dispatch
-one-specialist-per-subagent instead — substantially faster, and the audit stays bounded at
-5 minutes since specialists share no state. Give each one: the
-marketplace root, the snapshot path, its excerpt path, the path to its SKILL.md, and its output
-path. Dispatch with write access to the working directory — the specialist must write its
-own fragment file, so a read-only subagent is not acceptable. Require it to return ONLY a one-line status. Never the fragment contents, never page text.
+Steps 4–5 above are the normative path and work anywhere: run the waves in order in
+this session. Where the harness can run work concurrently, the same waves can fan out —
+substantially faster, since specialists share no state and only read the snapshot plus
+their own excerpt.
+
+Hand each delegated task its snapshot path, excerpt path, SKILL.md path, and output path,
+and require back a one-line status only — never fragment contents, never page text. Two
+conditions: the task must be able to write its own fragment file, and off-site probing
+stays with the parent session (probes need search and file-writing together) — never hand
+offsite-visibility to a task that cannot do both.
 
 - **Wave 1 (no dependencies):** access-discovery, representation-parity, entity-consistency,
   freshness-consistency, answer-coverage
@@ -149,7 +152,7 @@ own fragment file, so a read-only subagent is not acceptable. Require it to retu
 - **Wave 2 (needs wave 1):** referral-experience (needs passages_checked),
   offsite-visibility (needs the prompt set)
 
-If subagents are unavailable — or a dispatched specialist fails or times out — that skill
+Where concurrent work is unavailable — or a delegated task fails or times out — that skill
 contributes `not_evaluated` entries. It never fails the audit.
 
 ## Composition fallback chain (resolving MARKETPLACE_ROOT)

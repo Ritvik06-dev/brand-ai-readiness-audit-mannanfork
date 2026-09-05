@@ -706,6 +706,9 @@ def select_pages(candidate_urls, max_pages):
         (r"security|legal|privacy|terms|status", "trust"),
     ]
     clusters = {}
+    # Auth-shaped slugs are never decision content; sample them only if slots remain.
+    auth_re = re.compile(r"login|log-in|signin|sign-in|signup|sign-up|register|dashboard|settings|account|forgot|password|checkout|cart", re.I)
+    deferred = []
 
     def cluster_key(u):
         path = urlparse(u).path.rstrip("/")
@@ -728,14 +731,26 @@ def select_pages(candidate_urls, max_pages):
             if re.search(pattern, key, re.I) or any(re.search(pattern, u, re.I) for u in urls[:3]):
                 rep = urls[0]
                 if rep not in labels:
+                    if auth_re.search(key or "") or auth_re.search(rep):
+                        deferred.append((rep, label))
+                        continue
                     picked.append(rep)
                     labels[rep] = label
     for key, urls in cluster_rows:
         if len(picked) >= max_pages:
             break
         if urls[0] not in labels:
+            if auth_re.search(key or "") or auth_re.search(urls[0]):
+                deferred.append((urls[0], "other"))
+                continue
             picked.append(urls[0])
             labels[urls[0]] = "other"
+    for rep, label in deferred:
+        if len(picked) >= max_pages:
+            break
+        if rep not in labels:
+            picked.append(rep)
+            labels[rep] = label
     out, seen = [], set()
     for u in picked:
         if u not in seen:
@@ -900,10 +915,68 @@ def resolve_external_presence(fetcher, pages, site_host):
     return out
 
 
-def build_excerpts(pages, sitemap_summary, probes):
+FRAGMENT_SHAPE = {
+    "required_top_level": ["skill_id", "mode", "results"],
+    "result_required": ["check_id", "gate"],
+    "candidate_finding_required": ["title", "severity", "confidence",
+                                      "evidence", "suggested_action"],
+    "suggested_action_required": ["summary", "priority"],
+    "note": ("candidate_finding is required only when gate == 'finding'; "
+               "gate is one of finding, pass, not_evaluated"),
+}
+
+
+def _load_catalog():
+    try:
+        return load_json(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                      "..", "references", "check_catalog.json"))
+    except (OSError, ValueError):
+        return None
+
+
+def checks_for(catalog, skill_id):
+    """Project this skill's check templates from the catalog (single source -
+    generated here, never copied into docs)."""
+    if not catalog:
+        return []
+    return [{"check_id": c["check_id"],
+             "pattern_template": c.get("pattern_template"),
+             "evidence_template": c.get("evidence_template"),
+             "severity_band": c.get("severity_band"),
+             "negative_control": c.get("negative_control")}
+            for c in catalog.get("checks", [])
+            if c.get("skill_id") == skill_id]
+
+
+def cap_claims(claims):
+    """Collapse runs of identical (type, value) claims (e.g. a date strip)
+    into one row with a count; keep the first quote plus sample locations."""
+    grouped, order = {}, []
+    for c in claims or []:
+        key = (c.get("type"), c.get("value"))
+        if key not in grouped:
+            grouped[key] = []
+            order.append(key)
+        grouped[key].append(c)
+    out = []
+    for key in order:
+        rows = grouped[key]
+        if len(rows) > 5:
+            first = dict(rows[0])
+            first["count"] = len(rows)
+            locs = [r.get("location") for r in rows[1:4] if r.get("location")]
+            if locs:
+                first["sample_locations"] = locs
+            out.append(first)
+        else:
+            out.extend(rows)
+    return out
+
+
+def build_excerpts(pages, sitemap_summary, probes, catalog=None):
     budgets = {"answer-coverage-audit": 24000, "freshness-consistency-audit": 16000,
-               "referral-experience-audit": 12000}
-    ans_pages, frs_pages, ref_pages = [], [], []
+               "referral-experience-audit": 6000}
+    ans_pages, frs_pages, ref_pages, empty_urls = [], [], [], []
     totals = {"answer-coverage-audit": 0, "freshness-consistency-audit": 0,
               "referral-experience-audit": 0}
 
@@ -925,31 +998,62 @@ def build_excerpts(pages, sitemap_summary, probes):
                          "location": ("under %s" % s["heading"]) if s["heading"] else "top of page"}
                         for s in sections if s["text"]][:6]
         claims = p["claim_index"]
+        if not excerpt_locs and not claims and not heading_tree:
+            empty_urls.append(p["requested_url"])
+            continue
+        capped = cap_claims(claims)
+        tables = p.get("tables") or {}
+        inter = p.get("interactive") or {}
+        page_stats = {
+            "visible_chars": len(p.get("visible_text") or ""),
+            "heading_count": len(p.get("headings") or []),
+            "image_count": len(p.get("images") or []),
+            "table_semantic_count": tables.get("semantic_count", 0) or 0,
+            "div_grid_candidates": tables.get("div_grid_candidates", 0) or 0,
+            "accordions": inter.get("accordions", 0) or 0,
+            "details_elements": inter.get("details_elements", 0) or 0,
+            "dialogs": inter.get("dialogs", 0) or 0,
+        }
         ans_pages.append({"url": p["requested_url"], "page_class": p.get("page_class"), "title": p["title"],
                           "heading_tree": heading_tree,
                           "main_content_excerpts": bounded(excerpt_locs, "answer-coverage-audit"),
-                          "claim_index_subset": claims})
+                          "claim_index_subset": capped,
+                          "page_stats": page_stats})
         frs_pages.append({"url": p["requested_url"], "page_class": p.get("page_class"), "title": p["title"],
                           "heading_tree": heading_tree[:24],
-                          "main_content_excerpts": bounded(excerpt_locs[:2], "freshness-consistency-audit"),
-                          "claim_index_subset": claims})
+                          "main_content_excerpts": bounded(excerpt_locs[:1], "freshness-consistency-audit"),
+                          "claim_index_subset": capped,
+                          "page_stats": page_stats})
+        first = sorted(excerpt_locs, key=lambda l: l["char_offset"])[:1]
+        first = [{"char_offset": l["char_offset"], "text": l["text"][:600],
+                  "location": l.get("location")} for l in first]
         ref_pages.append({"url": p["requested_url"], "page_class": p.get("page_class"), "title": p["title"],
                           "heading_tree": heading_tree,
-                          "main_content_excerpts": bounded(excerpt_locs[:2], "referral-experience-audit"),
-                          "claim_index_subset": []})
+                          "main_content_excerpts": bounded(first, "referral-experience-audit"),
+                          "claim_index_subset": [],
+                          "page_stats": page_stats})
     ans = {"kind": "excerpt", "skill_id": "answer-coverage-audit", "budget_chars": 24000,
-           "generated_at": _now(), "pages": ans_pages, "extras": {}}
+           "generated_at": _now(), "pages": ans_pages,
+           "pages_without_content": empty_urls,
+           "extras": {"checks": checks_for(catalog, "answer-coverage-audit"),
+                      "fragment_shape": FRAGMENT_SHAPE}}
     frs = {"kind": "excerpt", "skill_id": "freshness-consistency-audit",
            "budget_chars": 16000, "generated_at": _now(), "pages": frs_pages,
+           "pages_without_content": empty_urls,
            "extras": {"sitemap": sitemap_summary,
                       "page_dates": [{"url": p["requested_url"],
                                       "structured": p.get("_structured_dates", []),
                                       "visible_dates": [c["value"] for c in p["claim_index"]
                                                         if c["type"] == "date"][:5]}
-                                     for p in pages]}}
+                                     for p in pages],
+                      "checks": checks_for(catalog, "freshness-consistency-audit"),
+                      "fragment_shape": FRAGMENT_SHAPE}}
     ref = {"kind": "excerpt", "skill_id": "referral-experience-audit",
-           "budget_chars": 12000, "generated_at": _now(), "pages": ref_pages,
-           "extras": {"pages_signals": [
+           "budget_chars": 6000, "generated_at": _now(), "pages": ref_pages,
+           "pages_without_content": empty_urls,
+           "extras": {"checks": checks_for(catalog, "referral-experience-audit"),
+                      "fragment_shape": FRAGMENT_SHAPE,
+                      "pages_signals": [
                {"url": p["requested_url"],
                 "overlay_in_raw_html": p["interactive"]["overlay_in_raw_html"],
                 "accordions": p["interactive"]["accordions"],
@@ -1157,8 +1261,10 @@ def run_collect(args):
     external = resolve_external_presence(fetcher, pages, parts.netloc)
 
     # excerpts ----------------------------------------------------------------
+    catalog = _load_catalog()
     ans, frs, ref = build_excerpts(pages, sitemap_summary, {"soft_404": soft,
-                                                            "redirect_path_preservation": redirects})
+                                                            "redirect_path_preservation": redirects},
+                                   catalog=catalog)
 
     snapshot = {
         "snapshot_version": 1,
@@ -1242,12 +1348,33 @@ def run_passages(args):
         fail("--passages file has no questions[]: answer-coverage wrote no prompt set "
              "(expected key 'questions', not 'passages'); fix passages.json and re-run", [])
     by_url = {p["requested_url"]: p for p in snapshot["pages"]}
+
+    def _norm_key(u):
+        try:
+            parts = urlparse(u or "")
+            host = (parts.netloc or "").lower()
+            if host.startswith("www."):
+                host = host[4:]
+            path = parts.path.rstrip("/") or "/"
+            return host + path
+        except Exception:
+            return u or ""
+    by_norm = {}
+    for p in snapshot["pages"]:
+        by_norm.setdefault(_norm_key(p["requested_url"]), p)
     results = []
     for q in passages.get("questions", []):
-        page = by_url.get(q.get("expected_page"))
+        want_url = q.get("expected_page")
+        page = by_url.get(want_url) or by_norm.get(_norm_key(want_url))
         contiguous, note = False, None
         if page is None:
-            note = "expected_page not in snapshot"
+            close = [u for u in by_url
+                     if _norm_key(u) == _norm_key(want_url) or u.rstrip("/") == (want_url or "").rstrip("/")][:3]
+            if not close:
+                same_host = [u for u in by_url if urlparse(u).netloc.lower().lstrip("www.") == urlparse(want_url or "").netloc.lower().lstrip("www.")][:3]
+                close = same_host
+            note = ("expected_page not in snapshot: got %s%s" %
+                    (want_url, "; close matches: " + ", ".join(close) if close else "; no close match"))
         else:
             ex = PageExtractor(q["expected_page"])
             ex.feed(page["raw_html"])
@@ -1264,7 +1391,13 @@ def run_passages(args):
                 if contiguous:
                     note = "passage spans two adjacent blocks (still fragment-highlightable)"
             if not contiguous:
-                note = "passage not found verbatim within any single text block"
+                full = " ".join(blocks)
+                if want and want in full:
+                    note = ("passage text is present on the page but split across blocks "
+                            "or interleaved - not one contiguous run")
+                else:
+                    note = ("passage text not found anywhere on the page - the "
+                            "expected_page may be wrong or the passage paraphrased")
         results.append({"question_id": q["question_id"], "page_url": q.get("expected_page"),
                         "contiguous": contiguous, "quote": q["candidate_passage"][:200]
                         if contiguous else None, "note": note})
@@ -1273,8 +1406,12 @@ def run_passages(args):
         json.dump(out, fh, indent=2, ensure_ascii=False)
         fh.write("\n")
     n_ok = sum(1 for r in results if r["contiguous"])
-    print("collect_snapshot --passages: %d/%d passages contiguous -> %s"
-          % (n_ok, len(results), args.out))
+    n_split = sum(1 for r in results if not r["contiguous"] and r["note"]
+                  and r["note"].startswith("passage text is present"))
+    n_missing = len(results) - n_ok - n_split
+    print("collect_snapshot --passages: %d/%d passages contiguous "
+          "(split-across-blocks: %d, not-on-page: %d) -> %s"
+          % (n_ok, len(results), n_split, n_missing, args.out))
 
     # offsite prompt-set excerpt: the questions (with their source) plus the
     # snapshot's external presence; written here because the prompt set only
@@ -1296,7 +1433,9 @@ def run_passages(args):
                    "search_declared": snapshot.get("capabilities", {}).get("web_search", False),
                    "note": "live probes only when search_declared; sheds first at the "
                            "deadline; without search, snapshot-only reasoning over "
-                           "external_presence and never invented probe results"},
+                           "external_presence and never invented probe results",
+                   "checks": checks_for(_load_catalog(), "offsite-visibility-audit"),
+                   "fragment_shape": FRAGMENT_SHAPE},
     }
     offsite_path = os.path.join(exc_dir, "offsite-visibility-audit.json")
     with open(offsite_path, "w", encoding="utf-8") as fh:

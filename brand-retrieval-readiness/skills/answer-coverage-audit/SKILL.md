@@ -2,6 +2,7 @@
 name: answer-coverage-audit
 description: Judge whether the questions a category's customers actually ask are answered by complete, extractable passages on the site — using a two-source prompt set (site-derived and market-derived questions), checking for unanswered category-standard questions, answers missing subject/units/timeframe, qualifiers detached from their claims, comparison data trapped in unlabelled grids, and boilerplate swamping the answer. Normally invoked by audit-orchestrator; use alone only when asked specifically about answer-coverage or content-extractability concerns.
 license: MIT
+allowed-tools: Bash Read Write
 metadata:
   version: "1.0.0"
 ---
@@ -32,13 +33,12 @@ gap between them is where the findings and the opportunities live.
 
 - Prepared excerpt file `audit/excerpts/answer-coverage-audit.json` (one read): pages with
   `url`, `page_class`, `title`, `heading_tree`, `main_content_excerpts` (≤1,500 chars per
-  location with `char_offset`), and `claim_index_subset`.
+  location with `char_offset`), and `claim_index_subset`. `extras.checks` carries the check
+  templates; `extras.fragment_shape` the fragment keys.
 - The snapshot's `site_type` (recorded in the snapshot; the orchestrator relays it).
 - Archetype applicability: `references/question_archetypes.md`.
-- Runtime contract: one read, one judgment, one write — at most 3 tool calls. Emit partial
-  findings with `not_evaluated` rather than exceed it. Judge from the excerpt — it carries
-  everything rated to this skill's checks; re-reading the full snapshot duplicates work the
-  scripts already did.
+- Runtime contract: judge from the excerpt only, in a single pass, and write the fragment
+  once; emit partial findings with `not_evaluated` rather than overrun.
 
 ## Procedure
 
@@ -50,10 +50,8 @@ gap between them is where the findings and the opportunities live.
    qualifier attached (the `qualifier_present` field). Judge extractability: heading path gives
    the passage context; comparison data survives the grid.
    **Quote granularity rule:** `candidate_passage` is the specific answer sentence(s) — one
-   paragraph, at most ~600 characters, never a multi-section dump. Oversized passages make
-   the referral skill's fragment-survivability check measure your quoting style instead of
-   the site; if the answer genuinely needs more than ~600 characters, redraw tighter or leave
-   the question to `opportunities`.
+   paragraph, at most ~600 characters, never a multi-section dump; if the answer genuinely
+   needs more than ~600 characters, redraw tighter or leave the question to `opportunities`.
 3. **Write `audit/passages.json`** (excerpts_schema `passages_file`): shape literal
    `{"kind": "passages", "skill_id": "answer-coverage-audit", "questions": [...]}` — the
    array key is `questions`, never `passages`. Every question with its
@@ -111,5 +109,5 @@ gap between them is where the findings and the opportunities live.
   `../audit-orchestrator/references/finding_fragment.json`, including its `opportunities[]`).
 - Never assign `F-` ids; the orchestrator does. Done means valid: the fragment parses as
   JSON and matches `finding_fragment.json` before handoff (`python3 <orchestrator>/scripts/validate_fragment.py <fragment>` (checks the schema, not just syntax)) — an unvalidated fragment is not a handoff. Building it programmatically (e.g.
-  `json.dump`) avoids the most common failure here. State in your summary which questions were
+  `json.dump`). If writing JSON through a shell heredoc instead, quote the delimiter (`<<'EOF'`). State in your summary which questions were
   market-derived so the offsite probe set inherits the right phrasing.

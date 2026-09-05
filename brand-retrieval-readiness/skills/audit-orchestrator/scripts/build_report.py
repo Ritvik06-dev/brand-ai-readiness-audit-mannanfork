@@ -185,10 +185,26 @@ def main():
             lint_warnings.append("fragment %s from %s is silent (0 results and 0 "
                                  "not_evaluated): the specialist contributed nothing; its "
                                  "checks are backfilled, not judged" % (frag_path, frag["skill_id"]))
+        if not frag.get("results") and frag.get("not_evaluated"):
+            if not any(re.search(r"capabilit|web_search|browser|deadline|no search",
+                                 (ne.get("reason") or ""), re.I)
+                       for ne in frag["not_evaluated"]):
+                lint_warnings.append("fragment %s from %s judged nothing (0 results, all %d "
+                                     "checks deferred as not_evaluated); verify the specialist "
+                                     "attempted judgment" % (frag_path, frag["skill_id"],
+                                                             len(frag["not_evaluated"])))
         for result in frag.get("results", []):
             all_reported.add(result["check_id"])
             gate = result.get("gate")
             if gate == "pass":
+                if result.get("evidence_quality") == "hypothesis":
+                    not_evaluated.append({
+                        "check_id": result["check_id"],
+                        "reason": ("pass asserted on hypothesis-grade evidence; treated as "
+                                   "not_evaluated (see fragment)"),
+                    })
+                    lint_warnings.append("fragment %s grades %s as pass on hypothesis evidence; "
+                                         "downgraded to not_evaluated" % (frag_path, result["check_id"]))
                 continue
             if gate == "not_evaluated":
                 not_evaluated.append({
@@ -356,7 +372,7 @@ def main():
     now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     coverage = {
         "specialists_resolved": 0 if args.degraded else len(skill_ids),
-        "specialists_requested": 6,
+        "specialists_requested": len({c.get("skill_id") for c in catalog.get("checks", [])}),
         "capabilities_unavailable": [],
     }
     if args.snapshot and os.path.exists(args.snapshot):

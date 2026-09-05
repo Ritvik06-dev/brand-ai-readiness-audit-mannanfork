@@ -2,6 +2,7 @@
 name: offsite-visibility-audit
 description: Probe how retrieval surfaces answer the site's inferred prompt set — is the brand mentioned, is the official page cited, is a third party cited instead, is the fact stated correctly, is a different entity resolved — with every observation recording engine, query, timestamp and result; without a search capability it degrades to snapshot-only reasoning over the site's external presence and never invents probe results. Normally invoked by audit-orchestrator; use alone only when asked specifically about off-site visibility concerns.
 license: MIT
+allowed-tools: Bash Read Write
 metadata:
   version: "1.0.0"
 ---
@@ -35,12 +36,12 @@ invention.
   set (`extras.prompt_set` — question, `source`, question_id; written by answer-coverage and
   the `--passages` post-step), `extras.external_presence` (declared external links with
   resolution status and owned-vs-independent classification), and `extras.search_declared`.
+  `extras.checks` carries the check templates; `extras.fragment_shape` the fragment keys.
 - `<orchestrator>/references/probe_protocol.md` — the probe method: phrasing, recording, outcome classes,
   budget, variability rules. It binds everything below.
-- Runtime contract: one read, one judgment, one write — at most 3 tool calls. Off-site probes
+- Runtime contract: judge from the excerpt only, in a single pass, and write the fragment
+  once; emit partial findings with `not_evaluated` rather than overrun. Off-site probes
   are the first thing shed at the deadline; an unrun probe is `not_evaluated`, never inferred.
-  Judge from the excerpt — it carries everything rated to this skill's checks; re-reading the
-  full snapshot duplicates work the scripts already did.
 
 ## Procedure
 
@@ -105,7 +106,6 @@ invention.
   `../audit-orchestrator/references/finding_fragment.json`. Never assign `F-` ids; the
   orchestrator does. Done means valid: the fragment parses as JSON and matches
   `finding_fragment.json` before handoff (`python3 <orchestrator>/scripts/validate_fragment.py <fragment>` (checks the schema, not just syntax)) — an
-  unvalidated fragment is not a handoff. Building it programmatically (e.g. `json.dump`)
-  avoids the most common failure here. Every recorded probe row appears in the relevant result's `observations`
+  unvalidated fragment is not a handoff. Building it programmatically (e.g. `json.dump`). If writing JSON through a shell heredoc instead, quote the delimiter (`<<'EOF'`). Every recorded probe row appears in the relevant result's `observations`
   so the report's evidence is reconstructible. This skill carries no `opportunities[]` —
   market-derived demand with no answering page is answer-coverage's channel.
