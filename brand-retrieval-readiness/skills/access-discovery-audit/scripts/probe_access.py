@@ -613,16 +613,26 @@ def check_sitemap_orphan(snap, pages):
         observations["outcome"] = ("no orphans in sample" if not orphans
                                    else "small comprehensively linked site - never flagged")
         return result("ACC-SITEMAP-ORPHAN", "pass", observations=observations)
+    def top_level(u):
+        return len([seg for seg in urlparse(u).path.split("/") if seg]) <= 1
+
+    important_orphans = [u for u in orphans
+                         if top_level(u) and re.search(
+                             r"price|pricing|product|doc|help|guide|about|contact", u, re.I)]
+    severity = "medium" if important_orphans else "low"
     return result(
         "ACC-SITEMAP-ORPHAN", "finding", urls=orphans[:5],
         observations=observations,
         evidence_quality="direct-measurement",
         candidate=candidate(
             "Important sitemap URLs are unreachable from sampled navigation",
-            "medium", "medium",
+            severity, "medium",
             "%d of %d sampled sitemap URLs have no internal link from any sampled page "
-            "(example: %s); site has %s discovered candidates. Sample-limited evidence."
-            % (len(orphans), len(sample), orphans[0], candidates_count),
+            "(example: %s); site has %s discovered candidates. Sample-limited evidence: "
+            "only %d sitemap URLs were sampled against %d sampled pages' links, so this "
+            "is a hypothesis for owner verification unless decision-class URLs (%d) are "
+            "orphaned." % (len(orphans), len(sample), orphans[0], candidates_count,
+                           len(sample), len(pages), len(important_orphans)),
             "Important URLs that exist only in the sitemap but not in crawlable links "
             "depend entirely on sitemap discovery; surfaces that miss the sitemap never "
             "find them.",

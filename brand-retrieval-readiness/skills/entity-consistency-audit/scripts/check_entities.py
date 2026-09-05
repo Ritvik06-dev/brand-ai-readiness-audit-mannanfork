@@ -211,11 +211,19 @@ def title_segments(title):
     return parts if parts else ([title.strip()] if (title or "").strip() else [])
 
 
+LEGAL_MARKER_RE = re.compile(r"\u00a9|copyright|\binc\b|\bltd\b|\bllc\b|\bgmbh\b"
+                             r"|\blimited\b|\bcorp(?:oration)?\b|\bvof\b|\bsl\b", re.I)
+
+
 def footer_names(raw_html):
     # inline scripts contain copyright markers and identifiers - strip them
     html = re.sub(r"<script\b.*?</script>", " ", raw_html or "", flags=re.S | re.I)
     out = []
     for m in FOOTER_RE.finditer(html):
+        # a footer legal name carries a legal marker; class hashes and UI
+        # strings (e.g. 'V1DKq_socials', 'Claims Subject') are not names
+        if not LEGAL_MARKER_RE.search(m.group(1) + " " + m.group(0)[:20]):
+            continue
         words = m.group(1).split()
         while words and words[-1].lower().strip(".,").rstrip(".") in FOOTER_NOISE:
             words = words[:-1]
@@ -230,6 +238,11 @@ class NameGroups:
 
     def __init__(self):
         self.groups = []  # each: {"reps": [(surface, value)], "tokens": set}
+
+    def matches_existing(self, value):
+        tokens = norm_tokens(value)
+        return any(subset_match(g["tokens"], tokens) or shares_token(g["tokens"], tokens)
+                   for g in self.groups)
 
     def add(self, surface, value, anchor=False):
         tokens = norm_tokens(value)
@@ -466,7 +479,10 @@ def collect_name_evidence(pages):
             for h in (page.get("headings") or []):
                 if h.get("level") == 1 and h.get("text", "").strip():
                     homepage_h1s.append(h["text"].strip())
-                    groups.add("h1", h["text"].strip())
+                    # an H1 that shares no token with the name groups is a
+                    # tagline, not a name variant - excluded from the gate
+                    if groups.matches_existing(h["text"].strip()):
+                        groups.add("h1", h["text"].strip())
     return {
         "groups": groups, "n_pages": n_pages,
         "title_value": homepage_title_segs[0] if homepage_title_segs else "(absent)",
@@ -493,35 +509,17 @@ def check_name_inconsistent(pages, ne):
     negative = ("intentional brand/product hierarchies with a consistent legal "
                 "entity name, and title/H1-only page-scope naming, are never "
                 "flagged")
-    # Gate: >= 3 distinct variants AND at least 2 anchored by identity-grade
-    # surfaces (schema name / og:site_name / footer legal name). Title and H1
-    # alone never drive the gate.
-    if distinct >= 3 and anchored >= 2:
-        evidence = ("title='%s', OG='%s', H1='%s', schema='%s', footer='%s' "
-                    "across %d pages."
-                    % (short(ne["title_value"], 80), short(ne["og_value"], 80),
-                       short(ne["h1_value"], 80), short(ne["schema_value"], 80),
-                       short(ne["footer_value"], 80), ne["n_pages"]))
-        title = ("The organization name is stated %d different ways across "
-                 "identity surfaces" % distinct)
-        return result(
-            "ENT-NAME-INCONSISTENT", "finding",
-            urls=[p.get("requested_url") for p in pages if p.get("page_class")
-                  in ("homepage", "about")][:3],
-            observations=obs,
-            candidate=candidate(
-                title, "medium", "high", short(evidence),
-                "The organization/product name varies across title, Open Graph, "
-                "canonical, H1, JSON-LD, and footer, weakening entity resolution.",
-                "Standardize the organization name: pick one canonical legal "
-                "name and use it (or an unambiguous variant) in title site-name, "
-                "og:site_name, Organization JSON-LD name, and the footer.",
-                "medium", surfaces=CITATION_SURFACES,
-                effort="small", owner="brand",
-                acceptance="Re-run collect_snapshot.py; title site-name, "
-                           "og:site_name, Organization schema name, and footer "
-                           "legal name normalize to one name-variant group."))
-    obs["reason"] = negative if distinct >= 2 else "name variants not measured"
+    # Gate is a MODEL judgment (corpus: 2/6 known-good brands flagged by the
+    # deterministic version - product-vs-publisher schema names, taglines, and
+    # page-scope titles are not identity conflicts). The script prepares the
+    # variant table; the orchestrator's model completes the gate per the
+    # entity SKILL.md, pairing with ENT-AMBIGUOUS-NAME.
+    obs["prepared_gate"] = ("model judgment: does any NAME-BEARING surface (og:site_name, "
+                            "Organization schema name, footer legal name) carry a materially "
+                            "different entity name than the dominant brand token? Product vs "
+                            "publisher naming, taglines, and page-scope titles are not conflicts.")
+    return result("ENT-NAME-INCONSISTENT", "pass", evidence_quality="semantic-judgment",
+                  observations=obs)
     return result("ENT-NAME-INCONSISTENT", "pass", observations=obs)
 
 
@@ -628,32 +626,39 @@ def check_corroboration(snap):
         obs["reason"] = ("independent destination(s) unresolved (timeout); "
                          "timeouts never become findings")
         return result("ENT-CORROBORATION-ABSENT", "pass", observations=obs)
-    if owned_resolved and not indep_resolved:
-        # every resolving declared link is owned (social profiles, own domains)
-        severity = "medium" if n >= 4 else "low"
-        sample = owned_resolved[0].get("url", "")
-        evidence = ("%d/%d declared external links resolve; %d are independent; "
-                    "brand name matched on 0 destinations (owned surfaces: e.g. "
-                    "%s)."
-                    % (len(owned_resolved), n, len(indep_resolved), sample))
+    if indep_errors and not indep_resolved:
+        # the site DECLARES independent corroboration and every such link is
+        # broken - a real deterministic finding (dead sameAs targets)
+        sample = indep_errors[0].get("url", "")
+        evidence = ("%d declared independent corroboration link(s) all fail to resolve "
+                    "(e.g. %s); %d owned links resolve."
+                    % (len(indep_errors), sample, len(owned_resolved)))
         return result(
             "ENT-CORROBORATION-ABSENT", "finding",
-            urls=[e.get("url") for e in owned_resolved[:3]],
+            urls=[e.get("url") for e in indep_errors[:3]],
             observations=obs,
             candidate=candidate(
-                "All declared external presence resolves to owned surfaces",
-                severity, "high", short(evidence),
-                "None of the site's declared external-presence links resolve to "
-                "independent (non-owned) corroboration surfaces, so claims rest "
-                "entirely on the brand's own say-so.",
-                "Publish or repair independent corroboration (directories, "
-                "review platforms, press, registries) and declare it via sameAs "
-                "or the footer; owned social profiles do not count.",
-                severity, surfaces=CITATION_SURFACES,
-                effort="medium", owner="brand",
-                acceptance="Re-run collect_snapshot.py; at least one declared "
-                           "independent (non-owned) link resolves with "
-                           "brand_name_match true."))
+                "Declared independent corroboration links fail to resolve",
+                "medium", "high", short(evidence),
+                "The site points at independent surfaces (a directory, registry, or "
+                "review profile) and they are dead - the declared corroboration is "
+                "broken, so nothing independent vouches for the entity.",
+                "Fix or remove the dead independent links (sameAs/footer).",
+                "medium", effort="small", owner="web-platform",
+                acceptance="All declared independent links return 2xx/3xx."))
+    if owned_resolved and not indep_resolved:
+        # every resolving declared link is owned. Zero DECLARED independent links
+        # is common on well-run brands and only meaningful when the entity name is
+        # ambiguous - model judgment, paired with ENT-AMBIGUOUS-NAME (never
+        # auto-flagged; the corpus showed this firing on 4/6 known-good sites).
+        sample = owned_resolved[0].get("url", "")
+        obs["note"] = ("all resolving declared links are owned (e.g. %s); zero declared "
+                       "independent corroboration is common on healthy brands and only "
+                       "meaningful when the ENT-AMBIGUOUS-NAME judgment finds the name "
+                       "ambiguous - complete the gate there, citing these numbers" % sample)
+        obs["prepared_for"] = "ENT-AMBIGUOUS-NAME pairing (model judgment)"
+        return result("ENT-CORROBORATION-ABSENT", "pass",
+                      evidence_quality="semantic-judgment", observations=obs)
     obs["reason"] = ("declared surfaces resolved but none classified 'independent'; "
                      "owned surfaces never count as corroboration and 'unknown' "
                      "classifications cannot establish corroboration absence")

@@ -306,25 +306,39 @@ def analyze(pages):
         nt = p.get("non_text") or {}
         media = nt.get("canvas", 0) + nt.get("svg_without_text", 0) \
             + nt.get("video_without_transcript", 0)
-        if (empty_alt >= 5 and words < 300) or media >= 3:
-            dominant.append((p, empty_alt, media, words))
+        img_total = len(p.get("images", []) or [])
+        alt_dominant = empty_alt >= 5 and img_total and empty_alt * 2 >= img_total
+        # media lock-in requires the page to have no content-bearing inline
+        # state - when the facts live in __NEXT_DATA__/state, the page's problem
+        # is hydration (REP-STATE-ONLY-FACT), not media lock-in
+        no_state = state_fact_count(p) == 0
+        unambiguous = (alt_dominant and words < 100) or \
+            (media >= 3 and words < 100 and no_state)
+        ambiguous = (alt_dominant and words < 300) or \
+            (media >= 3 and words < 300 and no_state)
+        if unambiguous or ambiguous:
+            dominant.append((p, empty_alt, media, words, unambiguous))
     if dominant:
-        p, empty_alt, media, words = dominant[0]
+        p, empty_alt, media, words, unambiguous = dominant[0]
+        conf = "high" if unambiguous else "low"
+        note = ("" if unambiguous else
+                " Ambiguous: the page has some visible text; visual confirmation of "
+                "what the media carry requires a browser or owner review.")
         sev = "high" if words < 80 else "medium"
         results.append({
             "check_id": "REP-NON-TEXT-LOCKIN", "gate": "finding",
-            "urls": [q["requested_url"] for q, _, _, _ in dominant[:8]],
+            "urls": [q["requested_url"] for q, _, _, _, _ in dominant[:8]],
             "observations": {"pages_image_or_media_dominant": len(dominant),
                              "empty_alt_images": empty_alt, "non_text_media": media,
                              "visible_words": words},
             "evidence_quality": "direct-measurement",
             "candidate_finding": {
                 "title": "Decision content is carried by media without text equivalents",
-                "severity": sev, "confidence": "medium",
+                "severity": sev, "confidence": conf,
                 "evidence": "%s carries %d empty-alt images and %d text-free media elements "
                             "against %d visible words - the page's substance is not "
-                            "extractable as text." % (p["requested_url"], empty_alt, media,
-                                                      words),
+                            "extractable as text.%s" % (p["requested_url"], empty_alt, media,
+                                                        words, note),
                 "why_it_matters": "Text extraction recovers almost nothing from these pages; "
                                   "facts locked in media are invisible to retrieval systems.",
                 "suggested_action": {
@@ -437,13 +451,16 @@ def analyze(pages):
     total_instances = 0
     for p in pages:
         raw = p.get("raw_html", "") or ""
+        words = len((p.get("visible_text") or "").split())
         instances = 0
         for m in HIDE_STYLE_RE.finditer(raw):
             tag = m.group(0)
             if ALLOWLIST_RE.search(tag):
                 continue
             instances += 1
-        if instances >= 2:
+        # hidden text on a content-rich page is structural UI (collapsible nav,
+        # tables show/hide), not cloaking - the wikipedia negative control
+        if instances >= 2 and words < 300:
             hidden_pages.append((p, instances))
         total_instances += instances
     if hidden_pages and len(hidden_pages) >= 2:
