@@ -21,9 +21,10 @@ Planned opener (INDEPENDENT_REVIEW §10):
 | `audit-orchestrator` | **entrypoint** — snapshot, composition, correlation, report | `collect_snapshot.py`, `build_report.py` |
 | `access-discovery-audit` | reach: robots roles, index controls, canonicals, challenges | `probe_access.py` |
 | `representation-parity-audit` | read: raw/text/state/metadata fact parity | `analyze_representation.py` |
-| `answerability-audit` | extract: question→passage completeness | judgment over bounded excerpts |
+| `answer-coverage-audit` | extract: two-source question set → passage completeness | judgment over bounded excerpts |
 | `entity-consistency-audit` | identify: JSON-LD validity, identity matrix, ambiguity | `check_entities.py` + judgment |
 | `freshness-consistency-audit` | trust: dates, versions, self-contradictions | judgment over claim index |
+| `offsite-visibility-audit` | cite: capability-gated prompt-set probes; external presence | judgment + recorded probes |
 | `referral-experience-audit` | land: above-fold confirmation, overlays, soft 404s, fragments | judgment + snapshot probes |
 
 ## Validation

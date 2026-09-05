@@ -9,8 +9,9 @@ metadata:
 
 # Access & Discovery Audit
 
-> **Build status (Phase 0):** stub. SKILL.md procedure, `scripts/probe_access.py`, and vendored
-> `scripts/_fetch.py` + `references/registry_crawler_roles.json` land in Phases 2-3 per `BUILD_PLAN.md`.
+> **Status:** stub. The Phase 3 SKILL.md and `scripts/probe_access.py` (a snapshot-only reader —
+> ALL network I/O lives in `collect_snapshot.py`; this skill never fetches) land with the
+> Phase 3 build.
 
 ## When to use
 

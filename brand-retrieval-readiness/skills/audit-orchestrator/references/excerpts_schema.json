@@ -21,7 +21,7 @@
         "pages": { "type": "array", "maxItems": 8, "items": { "$ref": "#/definitions/excerpt_page" } },
         "extras": {
           "type": "object",
-          "description": "per-skill additions: referral-experience <- probes subset (soft_404, redirect_path_preservation) plus the passages_checked results; freshness-consistency <- sitemap lastmod summary + claim_index across pages; answerability <- nothing extra",
+          "description": "per-skill additions: referral-experience <- probes subset (soft_404, redirect_path_preservation) plus the passages_checked results; freshness-consistency <- sitemap lastmod summary + claim_index across pages; answer-coverage <- nothing extra; offsite-visibility <- the prompt set (written by the --passages post-step)",
           "additionalProperties": true
         }
       }

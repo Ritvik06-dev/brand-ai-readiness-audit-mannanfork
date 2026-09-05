@@ -1185,7 +1185,7 @@ def main():
     ap.add_argument("--url", help="public http(s) URL to audit")
     ap.add_argument("--out", default="audit/snapshot.json", help="snapshot output path")
     ap.add_argument("--snapshot", help="existing snapshot (for --passages mode)")
-    ap.add_argument("--passages", help="audit/passages.json (answerability output)")
+    ap.add_argument("--passages", help="audit/passages.json (answer-coverage-audit output)")
     ap.add_argument("--allow-private", action="store_true",
                     help="permit private/loopback hosts and non-standard ports "
                          "(local test fixtures only)")
