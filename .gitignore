@@ -4,3 +4,4 @@ __pycache__/
 audit/
 research/field-study/*.tmp
 .DS_Store
+local-skill-test/

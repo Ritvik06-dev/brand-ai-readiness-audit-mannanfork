@@ -109,7 +109,10 @@ def pct_encode_url(u):
         b = u.encode("latin-1")
     except UnicodeEncodeError:
         b = u.encode("utf-8")
-    return quote(b, safe=SAFE_URL_CHARS)
+    out = quote(b, safe=SAFE_URL_CHARS)
+    # normalize percent-hex to uppercase (%e0 vs %E0 hit different cache keys
+    # on some strict origins) - deterministic probe URLs
+    return re.sub(r"%[0-9a-f]{2}", lambda m: m.group(0).upper(), out)
 
 
 class Fetcher:
@@ -797,6 +800,7 @@ def probe_ua(fetcher, homepage_url, robots_groups, robots_status, browser_status
             out.append({"token": token, "requested_path": homepage_url,
                         "robots_allows": False, "status": None, "content_type": None,
                         "cf_mitigated": None, "differential": None,
+                        "probe_robots_meta": None, "probe_x_robots_tag": None,
                         "headers": {"server": None, "cf_ray": None, "cf_mitigated": None},
                         "note": "probe skipped: robots disallows this token on / "
                                 "- the rule itself is the finding"})
@@ -804,6 +808,14 @@ def probe_ua(fetcher, homepage_url, robots_groups, robots_status, browser_status
         res = fetcher.fetch(homepage_url, ua=token, max_bytes=TINY_BYTES)
         headers = res.get("headers") or {}
         status = res.get("status")
+        # what directives does the BOT-UA tier actually see? (bot-tier-serve
+        # cross-check: a noindex shown only to the auditor's UA is not an
+        # index-control defect for retrieval surfaces)
+        probe_body = (res.get("body") or b"").decode("utf-8", "replace")
+        m_rm = re.search(r'<meta[^>]+name=["\']robots["\'][^>]+content=["\']([^"\']*)',
+                         probe_body, re.I)
+        probe_robots_meta = m_rm.group(1) if m_rm else None
+        probe_xrobots = headers.get("x-robots-tag")
         diff = None
         if (status is not None and browser_status is not None
                 and status != browser_status and status in (401, 403, 429, 503)):
@@ -814,6 +826,8 @@ def probe_ua(fetcher, homepage_url, robots_groups, robots_status, browser_status
                     "content_type": headers.get("content-type"),
                     "cf_mitigated": True if headers.get("cf-mitigated") else None,
                     "differential": diff,
+                    "probe_robots_meta": probe_robots_meta,
+                    "probe_x_robots_tag": probe_xrobots,
                     "headers": {"server": headers.get("server"),
                                 "cf_ray": headers.get("cf-ray"),
                                 "cf_mitigated": headers.get("cf-mitigated")}})

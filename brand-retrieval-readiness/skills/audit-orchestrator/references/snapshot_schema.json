@@ -252,7 +252,9 @@
               },
               "cf_mitigated": { "type": ["boolean", "null"] },
               "differential": { "type": ["string", "null"], "description": "e.g. 'browser 200 / bot-UA 403' - suspected edge discrimination, medium confidence cap" },
-              "note": { "type": ["string", "null"], "description": "set when the probe was skipped, e.g. robots disallows the token - the rule itself is the finding" }
+              "note": { "type": ["string", "null"], "description": "set when the probe was skipped, e.g. robots disallows the token - the rule itself is the finding" },
+              "probe_robots_meta": { "type": ["string", "null"], "description": "robots meta content as seen by THIS bot token's UA - the bot-tier-serve cross-check" },
+              "probe_x_robots_tag": { "type": ["string", "null"], "description": "X-Robots-Tag as seen by THIS bot token's UA" }
             }
           }
         }

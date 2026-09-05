@@ -303,10 +303,35 @@ def check_index_control(snap, pages):
     observations["important_pages_checked"] = len(imp)
     if not findings:
         return result("ACC-INDEX-CONTROL", "pass", observations=observations)
+    # bot-tier-serve cross-check: if a bot-UA probe of the same path saw no
+    # noindex while the auditor-UA capture did, the directive is UA-tiered -
+    # not an index-control defect for retrieval surfaces -> low confidence
+    # (build_report routes to needs_verification with the differential)
+    probe_rows = (snap.get("probes") or {}).get("ua_probes") or []
+    def bot_tiered(page):
+        # the differential: a bot-UA probe of the SAME path fetched 200 and saw
+        # NO noindex, while the auditor-UA capture did -> UA-tiered directive
+        path = norm_path(page["requested_url"])
+        fetched = [pr for pr in probe_rows
+                   if pr.get("status") == 200
+                   and norm_path(pr.get("requested_path") or "") == path]
+        if not fetched:
+            return None
+        clean = [pr for pr in fetched
+                 if "noindex" not in (pr.get("probe_robots_meta") or "").lower()
+                 and "noindex" not in (pr.get("probe_x_robots_tag") or "").lower()]
+        return clean[0] if clean else None
     results = []
     noindex_pages = [p for p, f, _ in findings if "noindex" in f]
     if noindex_pages:
         site_wide = any(norm_path(p["requested_url"]) == "/" for p in noindex_pages)
+        tiered = next((bot_tiered(p) for p in noindex_pages if bot_tiered(p)), None)
+        tier_conf = "low" if tiered is not None else "high"
+        tier_note = ("Bot-tier serve suspected: a declared retrieval-bot UA (%s) saw NO "
+                     "noindex on the same path, while the auditor-UA capture did - "
+                     "the directive is UA-tiered, not an index-control defect for "
+                     "retrieval surfaces; verify with owner logs or verified-crawler "
+                     "access." % tiered.get("token")) if tiered is not None else ""
         results.append(result(
             "ACC-INDEX-CONTROL", "finding", urls=[p["requested_url"] for p in noindex_pages],
             observations={"pages": [{"url": p["requested_url"],
@@ -314,6 +339,7 @@ def check_index_control(snap, pages):
                                      "robots_meta": short(p.get("robots_meta")),
                                      "x_robots_tag": short(p.get("x_robots_tag"))}
                                     for p in noindex_pages],
+                          "bot_tier_probe": tiered,
                           "data_nosnippet_observations": observations.get(
                               "pages_with_data_nosnippet", 0)},
             evidence_quality="direct-measurement",
@@ -322,12 +348,13 @@ def check_index_control(snap, pages):
                 % ("the homepage and site-wide" if site_wide
                    else "important %s pages" % "/".join(sorted(
                        {p.get("page_class") or "page" for p in noindex_pages}))),
-                "critical" if site_wide else "high", "high",
+                "critical" if site_wide else "high", tier_conf,
                 "%d/%d sampled important pages carry noindex via robots meta or "
-                "X-Robots-Tag (%s)." % (len(noindex_pages), len(imp),
-                                        "; ".join(short(p.get("robots_meta") or
-                                                        p.get("x_robots_tag"))
-                                                  for p in noindex_pages[:2])),
+                "X-Robots-Tag (%s).%s" % (len(noindex_pages), len(imp),
+                                          "; ".join(short(p.get("robots_meta") or
+                                                          p.get("x_robots_tag"))
+                                                    for p in noindex_pages[:2]),
+                                          (" " + tier_note) if tier_note else ""),
                 "noindex removes the page from Google Search entirely; Google's AI-features "
                 "documentation names noindex among the controls that limit what AI Overviews "
                 "and AI Mode can show (developers.google.com/search/docs/appearance/"
@@ -509,30 +536,36 @@ def check_canonical(snap, pages):
 
 
 def redirect_key(url):
-    """Exact resource key for LOOP detection: scheme + FULL host (www matters -
-    an apex->www canonicalization hop is not a loop; a real www<->apex cycle
-    repeats full URLs within a few hops) + normalized path."""
+    """Cycle key for LOOP detection: the VERBATIM URL with only scheme/host
+    case normalized. Query INCLUDED (geo-funnels vary queries and terminate -
+    they are not cycles) and trailing slash PRESERVED (a slash-add hop is
+    canonicalization, not a repeat). A repeat means the server really sent us
+    back to a URL it already served."""
     parts = urlparse(url or "")
-    host = (parts.netloc or "").lower().rstrip(".")
-    path = (parts.path or "/").rstrip("/") or "/"
-    return "%s://%s%s" % (parts.scheme, host, path)
+    q = ("?" + parts.query) if parts.query else ""
+    return "%s://%s%s%s" % (parts.scheme.lower(), (parts.netloc or "").lower(),
+                            parts.path or "/", q)
 
 
 def check_redirect_loop(snap, pages):
     loops, chains = [], []
     for page in pages:
         chain = page.get("redirect_chain") or []
-        seen = {}
-        loop = False
-        for i, u in enumerate(chain):
+        hops = max(0, len(chain) - 1)
+        seen = set()
+        cycle = False
+        for u in chain:
             key = redirect_key(u)
             if key in seen:
-                loop = True
+                cycle = True
                 break
-            seen[key] = i
-        if loop:
+            seen.add(key)
+        # a genuine cycle (server sent us back to a served URL) is the high
+        # case; long non-cycling chains are crawl waste (medium); a terminating
+        # canonicalization chain of <=3 hops is normal site behavior - pass
+        if cycle:
             loops.append(page)
-        elif len(chain) >= 4:
+        elif hops >= 4:
             chains.append(page)
     if not loops and not chains:
         return result("ACC-REDIRECT-LOOP", "pass", observations={

@@ -256,6 +256,17 @@ def main():
     if unknown:
         limitations_extra.append("Unknown check ids were reported and dropped: %s." % ", ".join(unknown))
 
+    # not_evaluated dedupe: a check may arrive via both a gate result and the
+    # fragment's not_evaluated array - one entry per check_id (first wins).
+    seen_ne = set()
+    deduped_ne = []
+    for ne in not_evaluated:
+        if ne["check_id"] in seen_ne:
+            continue
+        seen_ne.add(ne["check_id"])
+        deduped_ne.append(ne)
+    not_evaluated = deduped_ne
+
     # Coverage backfill: every catalog check no fragment reported lands in
     # not_evaluated, so the report's coverage claim is complete and honest.
     for c in catalog["checks"]:
