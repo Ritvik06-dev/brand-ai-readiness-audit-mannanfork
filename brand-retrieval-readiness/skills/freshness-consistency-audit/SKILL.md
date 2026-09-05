@@ -38,6 +38,7 @@ conflicts are the measurable, on-site form of that failure.
 - Snapshot context relayed by the orchestrator when needed: `sitemap.lastmod_distinct_count`.
 - Runtime contract: judge from the excerpt only, in a single pass, and write the fragment
   once; emit partial findings with `not_evaluated` rather than overrun.
+  `extras.fragment_shape` is the complete fragment contract — never open `finding_fragment.json`.
 
 ## Procedure
 

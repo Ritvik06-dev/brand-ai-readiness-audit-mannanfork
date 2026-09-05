@@ -917,10 +917,25 @@ def resolve_external_presence(fetcher, pages, site_host):
 
 FRAGMENT_SHAPE = {
     "required_top_level": ["skill_id", "mode", "results"],
+    "mode_enum": ["snapshot", "url"],
+    "mode_note": "composed runs use mode snapshot; standalone URL-mode runs use url",
     "result_required": ["check_id", "gate"],
+    "result_keys": ["check_id", "gate", "urls", "observations", "evidence_quality",
+                    "candidate_finding"],
+    "urls_note": ("result-level 'urls' is the array of page URLs this result aggregates; "
+                  "the report renames it affected_urls - never write affected_urls in a fragment"),
+    "observations_rule": "observations is an object of measured values, or omit the key; never null",
+    "evidence_quality_enum": ["direct-measurement", "direct-representation-comparison",
+                              "indirect-corroborated", "semantic-judgment", "hypothesis"],
     "candidate_finding_required": ["title", "severity", "confidence",
-                                      "evidence", "suggested_action"],
+                                   "evidence", "suggested_action"],
+    "candidate_finding_keys": ["title", "severity", "confidence", "evidence",
+                               "why_it_matters", "affected_surfaces", "suggested_action"],
     "suggested_action_required": ["summary", "priority"],
+    "suggested_action_keys": ["summary", "priority", "effort", "owner", "acceptance_test"],
+    "sampling_gap": ("expected page unsampled, or question unanswerable from sampled pages: "
+                     "not_evaluated with reason 'sampling limitation: ...', never a finding; "
+                     "market-derived gaps with no answering page go to opportunities[], not findings"),
     "note": ("candidate_finding is required only when gate == 'finding'; "
                "gate is one of finding, pass, not_evaluated"),
 }
@@ -1099,6 +1114,7 @@ def discover_candidates(homepage_res, extractor, sitemap_urls, fetcher, base):
 
 def run_collect(args):
     started = time.time()
+    marks = [("start", started)]
     deadline_ts = started + args.deadline
     url = args.url
     parts = urlparse(url)
@@ -1151,6 +1167,7 @@ def run_collect(args):
         notes.append("robots.txt unreachable: %s" % robots_res["error"])
     robot_rows = expand_robot_rows(robots_groups, ROLE_BY_TOKEN)
 
+    marks.append(("robots", time.time()))
     # homepage + discovery ----------------------------------------------------
     home_res = fetcher.fetch(base)
     home_redirect_record = None
@@ -1183,6 +1200,7 @@ def run_collect(args):
         for e in sitemap_summary.get("lastmod_sample", []):
             lastmod_by_url[e["url"].rstrip("/")] = e["lastmod"]
 
+    marks.append(("discovery", time.time()))
     # per-page capture --------------------------------------------------------
     pages = []
     if home_redirect_record:
@@ -1245,6 +1263,7 @@ def run_collect(args):
         page["page_class"] = labels.get(u, "other")
         pages.append(page)
 
+    marks.append(("capture", time.time()))
     # probes ------------------------------------------------------------------
     soft = probe_soft_404(fetcher, base)
     llms_res = fetcher.fetch(urljoin(base, "/llms.txt"), max_bytes=TINY_BYTES)
@@ -1260,6 +1279,7 @@ def run_collect(args):
                          home_res.get("status"))
     external = resolve_external_presence(fetcher, pages, parts.netloc)
 
+    marks.append(("probes", time.time()))
     # excerpts ----------------------------------------------------------------
     catalog = _load_catalog()
     ans, frs, ref = build_excerpts(pages, sitemap_summary, {"soft_404": soft,
@@ -1333,10 +1353,32 @@ def run_collect(args):
           % ((soft or {}).get("status"), len(redirects), len(ua_probes), len(external)))
     print("  requests: %d | wall-clock: %ds of %ds deadline | deadline_hit: %s"
           % (fetcher.requests, elapsed, args.deadline, elapsed >= args.deadline - 2))
+    marks.append(("excerpts_write", time.time()))
+    print("  phases: %s" % " | ".join(
+        "%s=%ds" % (marks[i + 1][0], int(marks[i + 1][1] - marks[i][1]))
+        for i in range(len(marks) - 1)))
     print("  excerpts: %s" % ", ".join(m["path"] for m in manifest))
     if notes:
         print("  notes: %s" % " | ".join(notes[:5]))
     return snapshot
+
+
+def _fold_confusables(s):
+    """Fold common punctuation confusables before text comparison.
+
+    A model quoting a passage retypes what it saw: en/em dashes become
+    hyphens, curly quotes straighten, nbsp becomes a space. Browsers match
+    scroll-to-text fragments on narrower terms, so a folded match is NOT a
+    contiguity verdict - it only earns a distinct note naming quoting
+    fidelity instead of blaming the page."""
+    table = dict((ord(c), r) for c, r in [
+        ("\u2010", "-"), ("\u2011", "-"), ("\u2012", "-"),
+        ("\u2013", "-"), ("\u2014", "-"), ("\u2212", "-"),
+        ("\u2018", "'"), ("\u2019", "'"), ("\u201a", "'"),
+        ("\u201b", "'"), ("\u201c", '"'), ("\u201d", '"'),
+        ("\u201e", '"'), ("\u201f", '"'), ("\u00a0", " "),
+    ])
+    return " ".join((s or "").translate(table).split())
 
 
 def run_passages(args):
@@ -1364,6 +1406,14 @@ def run_passages(args):
         by_norm.setdefault(_norm_key(p["requested_url"]), p)
     results = []
     for q in passages.get("questions", []):
+        if not q.get("candidate_passage"):
+            # unanswered question: the entry is kept (it still feeds the
+            # offsite prompt set) with no passage key. Never a crash, never
+            # a contiguity verdict - referral reads this note, not a finding.
+            results.append({"question_id": q.get("question_id"), "page_url": q.get("expected_page"),
+                            "contiguous": False, "quote": None,
+                            "note": "no candidate passage recorded (unanswered question)"})
+            continue
         want_url = q.get("expected_page")
         page = by_url.get(want_url) or by_norm.get(_norm_key(want_url))
         contiguous, note = False, None
@@ -1380,7 +1430,7 @@ def run_passages(args):
             ex.feed(page["raw_html"])
             ex.close()
             ex.finalize()
-            want = " ".join(q["candidate_passage"].split())
+            want = " ".join((q.get("candidate_passage") or "").split())
             blocks = [" ".join(b.split()) for b in ex.blocks]
             contiguous = any(want and want in b for b in blocks)
             if not contiguous and want:
@@ -1395,12 +1445,16 @@ def run_passages(args):
                 if want and want in full:
                     note = ("passage text is present on the page but split across blocks "
                             "or interleaved - not one contiguous run")
+                elif want and _fold_confusables(want) in _fold_confusables(full):
+                    note = ("passage matches page text up to punctuation/whitespace variants "
+                            "(e.g. dashes or quotes) - likely quoting fidelity, not a site defect; "
+                            "verify the exact substring before citing")
                 else:
                     note = ("passage text not found anywhere on the page - the "
                             "expected_page may be wrong or the passage paraphrased")
         results.append({"question_id": q["question_id"], "page_url": q.get("expected_page"),
-                        "contiguous": contiguous, "quote": q["candidate_passage"][:200]
-                        if contiguous else None, "note": note})
+                        "contiguous": contiguous, "quote": ((q.get("candidate_passage") or "")[:200]
+                        if contiguous else None), "note": note})
     out = {"kind": "passages_checked", "generated_at": _now(), "results": results}
     with open(args.out, "w", encoding="utf-8") as fh:
         json.dump(out, fh, indent=2, ensure_ascii=False)

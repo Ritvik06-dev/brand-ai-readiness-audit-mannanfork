@@ -39,6 +39,7 @@ gap between them is where the findings and the opportunities live.
 - Archetype applicability: `references/question_archetypes.md`.
 - Runtime contract: judge from the excerpt only, in a single pass, and write the fragment
   once; emit partial findings with `not_evaluated` rather than overrun.
+  `extras.fragment_shape` is the complete fragment contract — never open `finding_fragment.json`.
 
 ## Procedure
 
@@ -52,17 +53,25 @@ gap between them is where the findings and the opportunities live.
    **Quote granularity rule:** `candidate_passage` is the specific answer sentence(s) — one
    paragraph, at most ~600 characters, never a multi-section dump; if the answer genuinely
    needs more than ~600 characters, redraw tighter or leave the question to `opportunities`.
+   Copy it as an exact substring of the excerpt — character for character, including dashes,
+   quotes and punctuation; never join lines, paraphrase, or retype from memory. A retyped
+   passage is a quoting defect, and the contiguity checker measures the site, not your quote.
 3. **Write `audit/passages.json`** (excerpts_schema `passages_file`): shape literal
    `{"kind": "passages", "skill_id": "answer-coverage-audit", "questions": [...]}` — the
    array key is `questions`, never `passages`. Every question with its
    `expected_page`, verbatim `candidate_passage`, `qualifier_present`, `source_location`. For
-   unanswered questions write the best near-miss passage you can find or omit the entry — the
-   orchestrator's `--passages` post-step tolerates missing pages.
+   unanswered questions write the best near-miss passage you can find, or keep the entry with
+   the `candidate_passage` key omitted — the orchestrator's `--passages` post-step records
+   those as no-candidate and tolerates missing pages.
 4. **Gate the checks** and write the fragment to the orchestrator's `audit/findings/` path:
    - **ANS-QUESTION-UNANSWERED** — a *core* archetype question with no official answering
      passage. Site-derived gap: finding (the site claims the territory and does not cover it).
      Market-derived gap: `opportunities[]` entry (unmet demand — the site never claimed it),
      never a finding.
+   - **Sampling gap:** when the expected page was never sampled, or the question cannot be
+     answered from sampled pages at all, that is a sampling limitation — `not_evaluated`
+     with the reason (`sampling limitation: ...`), never a finding and never an opportunity.
+     Only a sampled page's silence is a gap.
    - **ANS-PASSAGE-INCOMPLETE** — the passage exists but omits subject, units, or timeframe;
      extracted alone it under-informs.
    - **ANS-QUALIFIER-DETACHED** — the claim is stated without the qualifier that scopes it

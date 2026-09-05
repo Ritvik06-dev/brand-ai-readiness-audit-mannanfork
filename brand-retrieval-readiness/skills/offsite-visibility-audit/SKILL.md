@@ -42,6 +42,7 @@ invention.
 - Runtime contract: judge from the excerpt only, in a single pass, and write the fragment
   once; emit partial findings with `not_evaluated` rather than overrun. Off-site probes
   are the first thing shed at the deadline; an unrun probe is `not_evaluated`, never inferred.
+  `extras.fragment_shape` is the complete fragment contract — never open `finding_fragment.json`.
 
 ## Procedure
 

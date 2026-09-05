@@ -56,9 +56,62 @@ def dig(d, dotted):
     return node
 
 
+def unit_checks():
+    """No-server checks: confusable folding, --passages edge cases, --fix."""
+    fails = []
+    sys.path.insert(0, os.path.join(ORCH, "scripts"))
+    from collect_snapshot import _fold_confusables, run_passages
+    from types import SimpleNamespace
+    if _fold_confusables("2026–27 ‘quoted’\u00a0x") != "2026-27 'quoted' x":
+        fails.append("fold confusables mismatch")
+    work = tempfile.mkdtemp(prefix="fx-unit-")
+    snap = {"pages": [{"requested_url": "http://unit.test/guide",
+                         "raw_html": ("<html><head><title>Guide</title></head><body><main>"
+                                      "<p>Session 2026–27 runs March.</p></main></body></html>")}]}
+    sp = os.path.join(work, "snapshot.json")
+    json.dump(snap, open(sp, "w"))
+    pp = os.path.join(work, "passages.json")
+    json.dump({"kind": "passages", "skill_id": "answer-coverage-audit", "questions": [
+        {"question_id": "Q-001", "question": "q", "source": "site-derived",
+         "expected_page": "http://unit.test/guide",
+         "candidate_passage": "Session 2026–27 runs March."},
+        {"question_id": "Q-002", "question": "q", "source": "site-derived",
+         "expected_page": "http://unit.test/guide",
+         "candidate_passage": "Session 2026-27 runs March."},
+        {"question_id": "Q-003", "question": "q", "source": "site-derived",
+         "expected_page": "http://unit.test/guide"}]}, open(pp, "w"))
+    out = os.path.join(work, "checked.json")
+    try:
+        run_passages(SimpleNamespace(snapshot=sp, passages=pp, out=out))
+    except Exception as e:  # noqa: BLE001 - the point is it must not raise
+        fails.append("run_passages raised: %r" % e)
+        return fails
+    res = {r["question_id"]: r for r in json.load(open(out))["results"]}
+    if not res["Q-001"]["contiguous"]:
+        fails.append("unit verbatim not contiguous")
+    if res["Q-002"]["contiguous"] or "quoting fidelity" not in (res["Q-002"]["note"] or ""):
+        fails.append("unit near-match note wrong: %r" % res["Q-002"].get("note"))
+    if res["Q-003"]["contiguous"] or "no candidate passage" not in (res["Q-003"]["note"] or ""):
+        fails.append("unit omitted note wrong: %r" % res["Q-003"].get("note"))
+    fp = os.path.join(work, "frag.json")
+    json.dump({"skill_id": "answer-coverage-audit", "results": [
+        {"check_id": "ANS-QUESTION-UNANSWERED", "gate": "pass",
+         "affected_urls": ["http://unit.test/guide"], "observations": None}]}, open(fp, "w"))
+    p = run([sys.executable, os.path.join(ORCH, "scripts", "validate_fragment.py"), "--fix", fp])
+    if p.returncode != 0:
+        fails.append("--fix exited %d: %s" % (p.returncode, p.stdout[-200:]))
+    else:
+        fixed = json.load(open(fp))
+        r = fixed["results"][0]
+        if (fixed.get("mode") != "snapshot" or r.get("urls") != ["http://unit.test/guide"]
+                or "observations" in r or "affected_urls" in r):
+            fails.append("--fix corrections wrong: %r" % r)
+    return fails
+
+
 def main():
     only = sys.argv[1] if len(sys.argv) > 1 else None
-    failures = []
+    failures = ["unit: %s" % f for f in unit_checks()]
     t0 = time.time()
     for scenario in SCENARIOS:
         name = scenario["name"]
@@ -114,6 +167,33 @@ def main():
                 got = dig(snap, dotted)
                 if got != want:
                     failures.append("%s: snapshot %s=%r expected %r" % (name, dotted, got, want))
+            if scenario.get("passages") is not None:
+                pj = {"kind": "passages", "skill_id": "answer-coverage-audit", "questions": []}
+                for q in scenario["passages"]:
+                    q = dict(q)
+                    q["expected_page"] = q["expected_page"].replace("{BASE}", url.rstrip("/"))
+                    pj["questions"].append(q)
+                pj_path = os.path.join(work, "passages.json")
+                json.dump(pj, open(pj_path, "w"))
+                pc_path = os.path.join(work, "passages_checked.json")
+                p = run([sys.executable, os.path.join(ORCH, "scripts", "collect_snapshot.py"),
+                         "--passages", pj_path, "--snapshot",
+                         os.path.join(work, "snapshot.json"), "--out", pc_path])
+                if p.returncode != 0:
+                    failures.append("%s: --passages exited %d: %s"
+                                    % (name, p.returncode, (p.stderr or "")[-200:]))
+                else:
+                    res = {r["question_id"]: r
+                           for r in json.load(open(pc_path))["results"]}
+                    for qid, spec in (scenario.get("passages_asserts") or {}).items():
+                        r = res.get(qid)
+                        if r is None:
+                            failures.append("%s: passages %s missing from results" % (name, qid))
+                        elif r.get("contiguous") != spec["contiguous"]:
+                            failures.append("%s: passages %s contiguous=%r expected %r"
+                                            % (name, qid, r.get("contiguous"), spec["contiguous"]))
+                        elif (spec.get("note_contains") or "") not in (r.get("note") or ""):
+                            failures.append("%s: passages %s note=%r" % (name, qid, r.get("note")))
             print("PASS %s (%d findings)" % (name, len(findings))
                   if not any(f.startswith(name + ":") for f in failures)
                   else "FAIL %s" % name)

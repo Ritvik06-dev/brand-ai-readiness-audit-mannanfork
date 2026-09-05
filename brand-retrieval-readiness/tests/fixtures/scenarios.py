@@ -99,6 +99,10 @@ CHALLENGE_BODY = "<html><body>Checking your browser before proceeding (challenge
 
 HOME_LINKS = "<nav><a href=\"/pricing\">Pricing</a><a href=\"/about\">About</a></nav>"
 
+PASSAGES_BODY = PAGE.format(title="Acme Guide", content=(
+    "<p>The Academic Session 2026–27 runs from March 05, 2026 to March 31, 2026.</p>"
+    "<p>" + LIPSUM + "</p>"))
+
 SCENARIOS = [
     {
         "name": "01-robots-searchbot-block",
@@ -395,5 +399,34 @@ SCENARIOS.extend([
         "expected_findings": {"ACC-REDIRECT-LOOP": {"severity": "high"}},
         "expected_non_findings": [],
         "note": "a genuine cycle (repeated full URL) is the finding case",
+    },
+    {
+        "name": "26-passages-post-step",
+        "site_type": "saas",
+        "robots": {"status": 200, "body": "User-agent: *\nAllow: /\n"},
+        "pages": {"/": P(PAGE.format(title="Acme", content=(
+                        '<nav><a href="/guide">Guide</a></nav>' + LIPSUM))),
+                  "/guide": P(PASSAGES_BODY)},
+        "missing_path": {"status": 404, "body": HELPFUL404_BODY},
+        "expected_findings": {},
+        "expected_non_findings": [],
+        "passages": [
+            {"question_id": "Q-001", "question": "When does the session run?",
+             "source": "site-derived", "expected_page": "{BASE}/guide",
+             "candidate_passage": "The Academic Session 2026–27 runs from March 05, 2026 to March 31, 2026."},
+            {"question_id": "Q-002", "question": "When does the session run?",
+             "source": "site-derived", "expected_page": "{BASE}/guide",
+             "candidate_passage": "The Academic Session 2026-27 runs from March 05, 2026 to March 31, 2026."},
+            {"question_id": "Q-003", "question": "Is there an evening program?",
+             "source": "site-derived", "expected_page": "{BASE}/guide"},
+        ],
+        "passages_asserts": {
+            "Q-001": {"contiguous": True},
+            "Q-002": {"contiguous": False, "note_contains": "quoting fidelity"},
+            "Q-003": {"contiguous": False, "note_contains": "no candidate passage"},
+        },
+        "note": "post-step edge cases (live-class specimens): verbatim passes, a hyphen-for-endash"
+                " retype earns the quoting-fidelity note instead of a misleading not-found, and an"
+                " omitted candidate_passage records no-candidate instead of crashing (KeyError)",
     },
 ])

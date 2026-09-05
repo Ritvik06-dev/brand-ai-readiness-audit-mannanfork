@@ -40,6 +40,7 @@ visitor, judged here because they land on the citation).
 - Snapshot context relayed when needed: image dimensions and inline render-blocking hints.
 - Runtime contract: judge from the excerpt and `passages_checked` only, in a single pass, and
   write the fragment once; emit partial findings with `not_evaluated` rather than overrun.
+  `extras.fragment_shape` is the complete fragment contract — never open `finding_fragment.json`.
 
 ## Procedure
 

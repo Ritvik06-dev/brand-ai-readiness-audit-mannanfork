@@ -61,7 +61,8 @@ from there with explicit paths.
 - **Context:** Do not read `audit/snapshot.json`. Only scripts touch it. You read excerpt files and script stdout only. The command
   strings in steps 4–6 are complete: do not read script or registry source to reconstruct
   them, and do not re-read schemas before judging — schemas are the merge's contract and
-  your excerpts already conform. Any script output larger than a screen means you called
+  your excerpts already conform. `extras.fragment_shape` in each excerpt is the complete
+  fragment contract — never open `finding_fragment.json` mid-audit. Any script output larger than a screen means you called
   it wrong.
 
 ## Procedure
