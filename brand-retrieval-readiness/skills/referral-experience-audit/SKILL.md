@@ -50,16 +50,24 @@ visitor, judged here because they land on the citation).
    - **REF-PATH-DROP-REDIRECT** — `extras.redirect_path_preservation`: a variant redirect that
      dropped the path to `/`, losing the answer for every citation of that variant.
 2. **Text-fragment survivability** — **REF-FRAGMENT-UNSURVIVABLE** from `passages_checked.json`:
-   `contiguous: false` rows, with their notes. Google AI Overviews and AI Mode land visitors
-   with `#:~:text=` scroll-to-text fragments (roughly half of AI Mode click-throughs by
-   third-party analysis), so a passage split across spans or assembled by script fails the
-   highlight silently. Heading-`id` coverage stays **low** severity: Google surfaces land with
-   text fragments, not heading anchors — stable anchors help other surfaces and the human's
-   table of contents, and nothing more.
+   `contiguous: false` rows, with their notes. Judge passages **as answer-coverage wrote them**
+   under its quote-granularity rule (≤ ~600 characters, the specific answer sentence(s)); a
+   passage that fails only because it was an oversized dump is `not_evaluated` with that
+   reason — the check measures the site, not quoting style. Google AI Overviews and AI Mode
+   land visitors with `#:~:text=` scroll-to-text fragments (roughly half of AI Mode
+   click-throughs by third-party analysis), so a passage split across spans or assembled by
+   script fails the highlight silently. Heading-`id` coverage stays **low** severity: Google
+   surfaces land with text fragments, not heading anchors — stable anchors help other surfaces
+   and the human's table of contents, and nothing more.
 3. **Continuation judgments** — semantic, medium cap, quoted from the excerpts:
    - **REF-ANSWER-NOT-CONFIRMED** — for each answer-coverage question with an expected page:
-     is the answer confirmable in the first screenful with its qualifier attached? The slogan
-     H1 with the fact 900 words down is the flag case, not the pass case.
+     is the answer confirmable in the first screenful with its qualifier attached? **Explicit
+     proxy (adopted; no improvising per run):** the first screenful is approximated by the
+     first ~600 characters of the page's main-content extraction — an answer appearing within
+     that window confirms; an answer beyond it, or present only after interaction, is the
+     flag case. State the proxy in the evidence and keep confidence at medium; a declared
+     browser capability upgrades to direct observation. The slogan H1 with the fact 900 words
+     down is the flag case, not the pass case.
    - **REF-COLLAPSED-ANSWER** — the accordion inversion: content in the DOM but collapsed by
      default is fine for the machine and hostile to the human who arrived for exactly that
      fact (use `pages_signals` accordions/details/dialogs plus the excerpts). The

@@ -47,6 +47,11 @@ gap between them is where the findings and the opportunities live.
    (verbatim, ≤2,000 chars). Judge completeness: subject explicit, claim with units/timeframe,
    qualifier attached (the `qualifier_present` field). Judge extractability: heading path gives
    the passage context; comparison data survives the grid.
+   **Quote granularity rule:** `candidate_passage` is the specific answer sentence(s) — one
+   paragraph, at most ~600 characters, never a multi-section dump. Oversized passages make
+   the referral skill's fragment-survivability check measure your quoting style instead of
+   the site; if the answer genuinely needs more than ~600 characters, redraw tighter or leave
+   the question to `opportunities`.
 3. **Write `audit/passages.json`** (excerpts_schema `passages_file`): every question with its
    `expected_page`, verbatim `candidate_passage`, `qualifier_present`, `source_location`. For
    unanswered questions write the best near-miss passage you can find or omit the entry — the
@@ -65,7 +70,12 @@ gap between them is where the findings and the opportunities live.
      plan-value pairing does not survive extraction (pair with REP-TABLE-SEMANTICS; do not
      double-report the same defect).
    - **ANS-BOILERPLATE-DROWNING** — repeated boilerplate precedes or swamps main content in
-     extraction; state the shared preamble and the median offset where unique content starts.
+     extraction. The gate is quantified and aligned with REP-EXTRACTION-LOSS's displacement
+     bar: a shared preamble on at least half the sampled pages **AND** median unique-content
+     offset **above 1,500 characters**. Below that (e.g. a 130–300 character docs-index nav
+     with content starting at ~300) it is orientation — pass, with the measured numbers
+     recorded as the non-evidence. A broken sentence inside the preamble is a separate
+     ANS-PASSAGE-INCOMPLETE fact, not this check.
 
 ## Findings (authoring rules)
 

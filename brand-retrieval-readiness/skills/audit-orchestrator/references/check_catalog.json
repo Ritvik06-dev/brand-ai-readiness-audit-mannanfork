@@ -311,7 +311,7 @@
       "evidence_required": "semantic-judgment",
       "evidence_template": "{k}/{n} pages open extraction with the same {boilerplate_chars}-char preamble; unique content starts at a median offset of {median_offset}.",
       "severity_band": ["medium"],
-      "negative_control": "The heading path gives enough context that the extracted fragment survives on its own.",
+      "negative_control": "The preamble is a few hundred characters of orientation and unique content starts early - quantified: median unique-content offset at or below ~1,500 characters (aligned with REP-EXTRACTION-LOSS's displacement bar) is a pass, with the measured numbers recorded as the non-evidence; the heading path still giving the extracted fragment enough context to survive on its own is also a pass; a broken sentence inside the preamble is an ANS-PASSAGE-INCOMPLETE fact, not this check.",
       "affected_surfaces_default": []
     },
     {
