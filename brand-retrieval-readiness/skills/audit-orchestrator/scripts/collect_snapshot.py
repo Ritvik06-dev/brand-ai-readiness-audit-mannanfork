@@ -53,18 +53,26 @@ OVERLAY_RE = re.compile(r"cookie|consent|gdpr|paywall|interstitial|onetrust|osan
 ACCORDION_RE = re.compile(r"accordion|collapse|expander|toggle-content", re.I)
 
 PRICE_RE = re.compile(r"(?:[$\u20ac\u00a3\u20b9]\s?\d[\d,.]*)|(?:\b\d[\d,.]*\s?(?:USD|EUR|GBP|INR)\b)")
-DATE_RE = re.compile(r"\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2},?\s+(?:19|20)\d{2}\b|\b(?:19|20)\d{2}-\d{2}-\d{2}\b")
+DATE_RE = re.compile(r"\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2},?\s?(?:19|20)\d{2}\b|\b\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+(?:19|20)\d{2}\b|\b(?:19|20)\d{2}-\d{2}-\d{2}\b|\b\d{1,2}/\d{1,2}/(?:19|20)\d{2}\b|(?:(?:updated|modified|published|revised|last\s+(?:updated|modified|reviewed)|copyright|\u00a9|as\s+of)[^.\n]{0,40}?\b(?:19|20)\d{2}\b)", re.I)
 YEAR_RE = re.compile(r"\b(19|20)\d{2}\b")
-COUNT_RE = re.compile(r"\b\d[\d,.]*\+?\s+(?:customers|users|teams|companies|downloads|stars|reviews|countries|developers|installations)\b", re.I)
+COUNT_RE = re.compile(r"\b\d[\d,.]*\+?\s+(?:customers|users|teams|companies|developers|downloads|installs|packages|modules|plugins|extensions|themes|pages|articles|posts|members|countries|enterprises|stars|reviews|questions|students|patients|locations|stores|recipes|episodes|issues|projects|skills)\b", re.I)
 PLAN_RE = re.compile(r"\b(?:Free|Starter|Basic|Standard|Pro|Professional|Premium|Team|Business|Enterprise|Growth|Scale|Plus|Advanced)\b(?:\s+plan)?")
-VERSION_RE = re.compile(r"\bv(?:ersion\s*)?\d+\.\d+(?:\.\d+)?\b", re.I)
+VERSION_RE = re.compile(r"\bv(?:ersion\s*)?\d+\.\d+(?:\.\d+)?\b|\b\d+\.\d+\.\d+\b", re.I)
 HOURS_RE = re.compile(r"\b\d{1,2}(?::\d{2})?\s?(?:am|pm)\s?(?:[-\u2013]\s?\d{1,2}(?::\d{2})?\s?(?:am|pm))?", re.I)
 PHONE_RE = re.compile(r"(?:\+\d{1,2}\s?)?(?:\(\d{3}\)|\d{3})[\s.-]\d{3}[\s.-]\d{4}\b")
 ADDRESS_RE = re.compile(r"\b\d{1,5}\s+[A-Z][A-Za-z]+(?:\s[A-Za-z]+)*\s+"
                         r"(?:Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Lane|Ln|Drive|Dr|Suite|Ste|Floor|Way)\b\.?")
+ELIGIBILITY_RE = re.compile(r"\b(?:eligib\w*|eligibility)\b[^.\n]{0,120}", re.I)
+DEADLINE_RE = re.compile(r"\b(?:deadline|apply by|applies? (?:by|until)|closes? on|ends? on|due (?:by|on)|registration closes)\b[^.\n]{0,80}", re.I)
+STOCK_RE = re.compile(r"\b(?:in stock|out of stock|sold out|back-?order|pre-?order|discontinued|no longer available|available again)\b[^.\n]{0,60}", re.I)
+SHIPPING_RE = re.compile(r"\b(?:free shipping|ships? (?:in|within)|delivery (?:in|within)|same-day delivery)\b[^.\n]{0,60}", re.I)
+CREDENTIAL_RE = re.compile(r"\b(?:ISO\s?\d{4,5}|SOC\s?2(?:\s+Type\s+I{1,2})?|GDPR[ -]compliant|HIPAA|FedRAMP|PCI[ -]DSS|certified)\b[^.\n]{0,60}", re.I)
 CLAIM_PATTERNS = [("price", PRICE_RE), ("date", DATE_RE), ("count", COUNT_RE),
                   ("plan", PLAN_RE), ("version", VERSION_RE), ("hours", HOURS_RE),
-                  ("phone", PHONE_RE), ("address", ADDRESS_RE)]
+                  ("phone", PHONE_RE), ("address", ADDRESS_RE),
+                  ("eligibility", ELIGIBILITY_RE), ("deadline", DEADLINE_RE),
+                  ("stock", STOCK_RE), ("shipping", SHIPPING_RE),
+                  ("credential", CREDENTIAL_RE)]
 
 INDEPENDENT_DOMAINS = {"wikipedia.org", "wikidata.org", "crunchbase.com",
                        "producthunt.com", "g2.com", "capterra.com", "trustpilot.com",
@@ -233,6 +241,8 @@ class PageExtractor(HTMLParser):
         self.grid_cols = 0
         self.microdata_types = []
         self.time_datetimes = []
+        self.code_depth = 0
+        self.claims_parts = []
         self.open_graph = {}
 
     # -- helpers ------------------------------------------------------------
@@ -266,6 +276,11 @@ class PageExtractor(HTMLParser):
         a = dict(attrs)
         if tag == "html" and a.get("lang"):
             self.lang = a["lang"]
+        if tag == "img":
+            alt = a.get("alt")
+            self.images.append({"src": urljoin(self.base, a.get("src") or ""),
+                                "alt": alt, "alt_empty": alt == "",
+                                "width": a.get("width"), "height": a.get("height")})
         if tag in ("script", "style", "noscript", "template"):
             self.skip_depth += 1
             if tag == "script":
@@ -309,9 +324,7 @@ class PageExtractor(HTMLParser):
             self._a_rel = a.get("rel")
             self._a_text = []
         elif tag == "img":
-            alt = a.get("alt")
-            self.images.append({"src": urljoin(self.base, a.get("src") or ""),
-                                "alt": alt, "alt_empty": alt == ""})
+            pass  # captured at starttag
         elif tag == "table":
             self.tables += 1
         elif tag == "details":
@@ -331,6 +344,8 @@ class PageExtractor(HTMLParser):
             self.video_transcript += 1
         elif tag == "time" and a.get("datetime"):
             self.time_datetimes.append(a["datetime"])
+        if tag in ("pre", "code", "kbd", "samp", "tt"):
+            self.code_depth += 1
         blob = self._scan_class_id(attrs)
         if blob:
             if OVERLAY_RE.search(blob) and self.overlay_signal is None:
@@ -384,6 +399,8 @@ class PageExtractor(HTMLParser):
             self.svg_open -= 1
         elif tag == "video" and self._in_video:
             self._in_video -= 1
+        elif tag in ("pre", "code", "kbd", "samp", "tt") and self.code_depth:
+            self.code_depth -= 1
         elif tag in BLOCK_TAGS:
             self._flush_block()
 
@@ -410,6 +427,8 @@ class PageExtractor(HTMLParser):
         text = data.strip()
         if text:
             self.cur_block.append(text)
+            if not self.code_depth:
+                self.claims_parts.append(text)
 
     def finalize(self):
         self._close_section()
@@ -526,7 +545,7 @@ def capture_page(res, url, extractor, sitemap_lastmod):
                      "svg_without_text": max(0, extractor.svg_open - (1 if extractor.svg_text else 0)),
                      "video_without_transcript": max(0, extractor.video - extractor.video_transcript)},
         "inline_state": {"payload_keys": payload_keys, "contrast_strings": contrast[:40]},
-        "claim_index": extract_claims(visible, url),
+        "claim_index": extract_claims("\n".join(extractor.claims_parts), url),
         "_structured_dates": structured_dates[:10],
     }
 
@@ -641,7 +660,7 @@ def fetch_sitemap(fetcher, sitemap_url):
             "entries_count": len(entries),
             "lastmod_present_count": len(lastmods),
             "lastmod_distinct_count": len(set(lastmods)),
-            "lastmod_sample": [{"url": u, "lastmod": lm} for u, lm in entries[:20]]}
+            "lastmod_sample": [{"url": u, "lastmod": lm} for u, lm in entries[:50]]}
 
 
 def select_pages(candidate_urls, max_pages):
@@ -774,6 +793,10 @@ def probe_ua(fetcher, homepage_url, robots_groups, robots_status, browser_status
 
 
 EXTERNAL_LINK_RE = re.compile(r"^(https?://)?(www\.)?([a-z0-9.-]+)", re.I)
+# Social/registry surfaces reject non-browser user agents; a browser-like UA with the
+# audit token appended resolves their status for the <=12 presence HEAD/GETs.
+EXTERNAL_UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
+               "Chrome/126.0.0.0 Safari/537.36 BrandRetrievalReadinessAudit/1.0")
 
 
 def resolve_external_presence(fetcher, pages, site_host):
@@ -814,15 +837,16 @@ def resolve_external_presence(fetcher, pages, site_host):
         klass = ("independent" if base in INDEPENDENT_DOMAINS
                  else "owned" if base in OWNED_DOMAINS
                  else "unknown")
-        res = fetcher.fetch(url, method="HEAD", max_bytes=0)
+        res = fetcher.fetch(url, method="HEAD", ua=EXTERNAL_UA, max_bytes=0)
         status = res.get("status")
-        if status in (405, 501):  # HEAD unsupported - fall back to a small GET
-            res = fetcher.fetch(url, max_bytes=TINY_BYTES)
+        if status in (403, 405, 429, 501) or (res.get("error") and status is None):
+            # HEAD unsupported or the surface rejects bots - fall back to a small GET
+            res = fetcher.fetch(url, ua=EXTERNAL_UA, max_bytes=TINY_BYTES)
             status = res.get("status")
         match = None
         if (status and 200 <= status < 400 and klass in ("independent", "unknown")
                 and brand_token and len([o for o in out if o["brand_name_match"] is not None]) < 6):
-            body = fetcher.fetch(url, max_bytes=TINY_BYTES)
+            body = fetcher.fetch(url, ua=EXTERNAL_UA, max_bytes=TINY_BYTES)
             if not body.get("error") and body.get("body"):
                 m = re.search(r"<title[^>]*>(.*?)</title>", body["body"].decode("utf-8", "replace"),
                               re.I | re.S)
@@ -864,7 +888,7 @@ def build_excerpts(pages, sitemap_summary):
                           "main_content_excerpts": bounded(excerpt_locs, "answer-coverage-audit"),
                           "claim_index_subset": claims})
         frs_pages.append({"url": p["requested_url"], "page_class": p.get("page_class"), "title": p["title"],
-                          "heading_tree": [],
+                          "heading_tree": heading_tree[:24],
                           "main_content_excerpts": bounded(excerpt_locs[:2], "freshness-consistency-audit"),
                           "claim_index_subset": claims})
         ref_pages.append({"url": p["requested_url"], "page_class": p.get("page_class"), "title": p["title"],
@@ -952,7 +976,13 @@ def run_collect(args):
     fetcher = Fetcher(deadline_ts, args.allow_private)
 
     # robots -----------------------------------------------------------------
+    robots_attempts = 1
     robots_res = fetcher.fetch(urljoin(base, "/robots.txt"), max_bytes=SMALL_BYTES)
+    if (not robots_res.get("error")) and (robots_res.get("status") or 0) >= 500:
+        # one retry for transient safe failures - ACC-ROBOTS-UNAVAILABLE's
+        # two-consecutive-5xx rule needs recorded attempts
+        robots_attempts = 2
+        robots_res = fetcher.fetch(urljoin(base, "/robots.txt"), max_bytes=SMALL_BYTES)
     robots_groups, sitemap_urls = [], []
     r_status, r_http = "error", None
     if not robots_res.get("error"):
@@ -1012,6 +1042,12 @@ def run_collect(args):
 
     # probes ------------------------------------------------------------------
     soft = probe_soft_404(fetcher, base)
+    llms_res = fetcher.fetch(urljoin(base, "/llms.txt"), max_bytes=TINY_BYTES)
+    llms_txt = None
+    if not llms_res.get("error") and llms_res.get("status") is not None:
+        llms_txt = {"http_status": llms_res["status"],
+                    "content_type": (llms_res.get("headers") or {}).get("content-type"),
+                    "format": "llms-txt" if llms_res["status"] == 200 else "none"}
     deep = next((urlparse(p["requested_url"]).path for p in pages
                  if urlparse(p["requested_url"]).path not in ("", "/")), "/pricing")
     redirects = probe_redirects(fetcher, urlunparse((parts.scheme, parts.netloc, deep, "", "", "")))
@@ -1033,6 +1069,7 @@ def run_collect(args):
                          "subagents": "subagents" in declared_caps,
                          "notes": notes},
         "robots": {"status": r_status, "http_status": r_http,
+                   "attempts": robots_attempts,
                    "groups": robot_rows,
                    "sitemaps_declared": sitemap_urls[:10],
                    "content_type": robots_res.get("headers", {}).get("content-type")},
@@ -1046,7 +1083,7 @@ def run_collect(args):
         "external_presence": external,
         "pages": [{k: v for k, v in p.items() if not k.startswith("_")} for p in pages],
         "probes": {"soft_404": soft, "redirect_path_preservation": redirects,
-                   "ua_probes": ua_probes},
+                   "ua_probes": ua_probes, "llms_txt": llms_txt},
         "excerpts_manifest": [],
     }
 

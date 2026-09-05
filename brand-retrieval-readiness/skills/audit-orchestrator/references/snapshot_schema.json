@@ -36,6 +36,7 @@
       "additionalProperties": false,
       "properties": {
         "status": { "enum": ["present", "not_found", "error"], "description": "404 = no crawl restrictions (NOT a defect); 5xx = error, a real crawl-delay condition" },
+        "attempts": { "type": ["integer", "null"], "description": "requests made for robots.txt (2 = one retry after a 5xx); gates the two-consecutive-5xx rule" },
         "http_status": { "type": ["integer", "null"] },
         "groups": {
           "type": "array",
@@ -79,7 +80,7 @@
         "entries_count": { "type": ["integer", "null"] },
         "lastmod_present_count": { "type": ["integer", "null"] },
         "lastmod_distinct_count": { "type": ["integer", "null"], "description": "uniform build-stamp lastmod shows as 1" },
-        "lastmod_sample": { "type": "array", "maxItems": 20, "items": { "type": "object", "required": ["url", "lastmod"], "additionalProperties": false, "properties": { "url": { "type": "string" }, "lastmod": { "type": "string" } } } }
+        "lastmod_sample": { "type": "array", "maxItems": 50, "items": { "type": "object", "required": ["url", "lastmod"], "additionalProperties": false, "properties": { "url": { "type": "string" }, "lastmod": { "type": "string" } } } }
       }
     },
     "external_presence": {
@@ -158,7 +159,7 @@
           },
           "microdata_types": { "type": "array", "items": { "type": "string" } },
           "open_graph": { "type": "object", "additionalProperties": { "type": "string" } },
-          "images": { "type": "array", "items": { "type": "object", "required": ["src"], "additionalProperties": false, "properties": { "src": { "type": "string" }, "alt": { "type": ["string", "null"] }, "alt_empty": { "type": "boolean" } } } },
+          "images": { "type": "array", "items": { "type": "object", "required": ["src"], "additionalProperties": false, "properties": { "src": { "type": "string" }, "alt": { "type": ["string", "null"] }, "alt_empty": { "type": "boolean" }, "width": { "type": ["string", "null"], "description": "width attribute as written; feeds text-bearing and perf-risk judgments" }, "height": { "type": ["string", "null"] } } } },
           "tables": { "type": "object", "additionalProperties": false, "properties": { "semantic_count": { "type": "integer" }, "div_grid_candidates": { "type": "integer", "description": "grids with >=3 aligned columns and no <table> (representation skill)" } } },
           "interactive": { "type": "object", "additionalProperties": false, "properties": { "accordions": { "type": "integer" }, "dialogs": { "type": "integer" }, "details_elements": { "type": "integer" }, "overlay_in_raw_html": { "type": ["boolean", "null"], "description": "consent/paywall/login overlay present in the INITIAL HTML - observed, not guessed" } } },
           "non_text": { "type": "object", "additionalProperties": false, "properties": { "canvas": { "type": "integer" }, "svg_without_text": { "type": "integer" }, "video_without_transcript": { "type": "integer" } } },
@@ -179,7 +180,7 @@
               "required": ["type", "value", "quote"],
               "additionalProperties": false,
               "properties": {
-                "type": { "enum": ["price", "date", "count", "plan", "version", "hours", "phone", "address"] },
+                "type": { "enum": ["price", "date", "count", "plan", "version", "hours", "phone", "address", "eligibility", "deadline", "stock", "shipping", "credential"] },
                 "value": { "type": "string" },
                 "quote": { "type": "string" },
                 "location": { "type": "string" }
@@ -216,6 +217,15 @@
               "final_path": { "type": ["string", "null"], "description": "null when the variant could not be resolved at all" },
               "path_preserved": { "type": ["boolean", "null"] }
             }
+          }
+        },
+        "llms_txt": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "properties": {
+            "http_status": { "type": ["integer", "null"] },
+            "content_type": { "type": ["string", "null"] },
+            "format": { "enum": ["llms-txt", "none"] }
           }
         },
         "ua_probes": {

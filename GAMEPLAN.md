@@ -506,7 +506,7 @@ become part-time.
 - [ ] Report arithmetic verified on 3 real runs; measured wall-clock < 5 min recorded in README
 - [ ] Degraded mode demonstrated; fixtures pass under both 3.14 and 3.9 including expected non-findings
 - [ ] FP corpus clean; holdout run once and reported honestly
-- [ ] `grep -rn "GAMEPLAN\|Build status\|docs/\|answerability\|_fetch" skills/ README.md` empty — no references to unshipped files or dead schemes
+- [ ] `grep -rnE "GAMEPLAN|Build status|docs/(BUILD_PLAN|FINAL_APPROACH|INDEPENDENT_REVIEW|PHASE1_REVIEW|SECOND_REVIEW|README)|answerability|_fetch" skills/ README.md` empty — no references to unshipped files or dead schemes
 - [ ] `grep -rE` for studied domains under `skills/` empty
 - [ ] Zip ≤ 50 MB, includes `tests/` and `evals/`, no model weights
 - [ ] README: positioning, pipeline opener, skill table, composition + fallback, validator command, measured runtime, limitations, "what this will never claim"
