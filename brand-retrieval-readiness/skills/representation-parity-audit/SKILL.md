@@ -1,6 +1,6 @@
 ---
 name: representation-parity-audit
-description: Analyze whether a page's important facts survive into the raw server response's visible text - detecting content that exists only after hydration, only inside inline state payloads, only in metadata, or only inside media, which non-rendering AI crawlers cannot retrieve. Normally invoked by audit-orchestrator; use alone only when asked specifically about rendering, hydration, or representation-loss concerns.
+description: Analyze whether a page's important facts survive into the raw server response's visible text — detecting content that exists only after hydration, only inside inline state payloads, only in metadata, or only inside media, which non-rendering AI crawlers cannot retrieve. Normally invoked by audit-orchestrator; use alone only when asked specifically about rendering, hydration, or representation-loss concerns.
 license: MIT
 compatibility: Requires Python 3.9+ (standard library only).
 allowed-tools: Bash Read
@@ -42,12 +42,19 @@ visible text, inline payloads, metadata, and media alternatives.
 
 ## Procedure
 
+Run `scripts/analyze_representation.py --snapshot <path> --out <fragment path>`. The script
+implements all eight checks deterministically:
+
 1. **Shell detection (REP-KEY-FACT-LOSS).** Count independent shell indicators per page:
    "enable JavaScript" noscript text; tiny visible text against a large raw response; loading
    or empty title; near-empty root container. Emit a finding only when at least two indicators
    coexist AND the inline payload holds no content-like strings (if it does, the page is
    REP-STATE-ONLY-FACT's case — partially readable, not lost). Otherwise the check is
-   `not_evaluated`: "no browser: render gap unconfirmed".
+   `not_evaluated`: "no browser: render gap unconfirmed". With a declared browser capability,
+   one post-load DOM capture per flagged page upgrades this check to
+   `direct-representation-comparison`/high confidence, separates collapsed-by-default content
+   from click-injected content, and catches post-load overlays — capability-gated, never
+   installing anything.
 2. **Inline-state contrast (REP-STATE-ONLY-FACT).** For each page, count payload-only strings
    that read like content (not props, ids, routes). A finding requires content-like payload
    strings on a page whose visible text is under 250 words. An SSR page whose payload strings
@@ -76,18 +83,18 @@ visible text, inline payloads, metadata, and media alternatives.
   with denominators and short quotes (≤200 chars); `affected_urls` carries the instances.
   Titles state site- or template-level patterns, never one visitor's incident.
 - When NOT to flag (negative controls), in plain words:
-  - REP-KEY-FACT-LOSS: an SSR page whose root container holds the same facts as visible text
+  — REP-KEY-FACT-LOSS: an SSR page whose root container holds the same facts as visible text
     passes; a framework marker alone is a clue, never a finding.
-  - REP-STATE-ONLY-FACT: payload strings that also appear in visible text pass; machinery
+  — REP-STATE-ONLY-FACT: payload strings that also appear in visible text pass; machinery
     strings (props, routes, ids) on a full-content page are not facts.
-  - REP-METADATA-CONTRAST: a description that summarizes or mirrors visible text is normal.
-  - REP-EXTRACTION-LOSS: boilerplate that precedes content within a few hundred characters is
+  — REP-METADATA-CONTRAST: a description that summarizes or mirrors visible text is normal.
+  — REP-EXTRACTION-LOSS: boilerplate that precedes content within a few hundred characters is
     orientation, not displacement.
-  - REP-NON-TEXT-LOCKIN: a text alternative carrying the same fact is a pass; decorative
+  — REP-NON-TEXT-LOCKIN: a text alternative carrying the same fact is a pass; decorative
     media is not lock-in.
-  - REP-TABLE-SEMANTICS: grids without comparison content, or any semantic `<table>`, pass.
-  - REP-LINKS-SCRIPT-ONLY: destinations that also exist as crawlable links pass.
-  - REP-HIDDEN-TEXT-SUSPECT: accessibility patterns are allowlisted and never flagged.
+  — REP-TABLE-SEMANTICS: grids without comparison content, or any semantic `<table>`, pass.
+  — REP-LINKS-SCRIPT-ONLY: destinations that also exist as crawlable links pass.
+  — REP-HIDDEN-TEXT-SUSPECT: accessibility patterns are allowlisted and never flagged.
 - Severity and confidence are separate; follow
   `../audit-orchestrator/references/severity_model.md`. Hydration-only facts are high (a
   partial outage — `affected_surfaces` names the non-rendering surfaces); payload-only facts
@@ -95,15 +102,6 @@ visible text, inline payloads, metadata, and media alternatives.
   only in an inline script). Every semantic judgment stays at medium unless a deterministic
   observation corroborates it. A failed tool call is never a site defect — `not_evaluated`
   with a reason.
-
-## Browser upgrade path
-
-With no browser, the raw-vs-rendered comparison is indirect: shell indicators plus payload
-contrast, capped at medium confidence. When the harness declares a browser capability, one
-post-load DOM capture per flagged page upgrades REP-KEY-FACT-LOSS to
-`direct-representation-comparison`/high confidence, separates collapsed-by-default content
-from click-injected content, and catches post-load overlays. The upgrade is capability-gated
-and never installs anything.
 
 ## Output
 

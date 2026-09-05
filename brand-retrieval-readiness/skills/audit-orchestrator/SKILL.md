@@ -69,6 +69,11 @@ from there with explicit paths.
    entity-consistency-audit): run the script named in that skill's SKILL.md with
    `--snapshot ./audit/snapshot.json --out ./audit/findings/<skill-id>.json`. Read only its
    printed summary. If a specialist cannot be resolved, note it and continue.
+   Then **complete semantic gates**: reopen each fragment once (fragments are small JSON —
+   this is not the snapshot) and finish any result carrying `gate: "pass"` with
+   `evidence_quality: "semantic-judgment"` — currently `ENT-AMBIGUOUS-NAME`: follow that
+   skill's SKILL.md, either promote it to a finding with quoted evidence or leave it as a
+   pass with the reason, and write the fragment back before step 6.
 
 5. **Judgment specialists** (in manifest order):
    - `answer-coverage-audit`: read `audit/excerpts/answer-coverage-audit.json` ONCE, follow its
