@@ -35,7 +35,7 @@ invention.
   set (`extras.prompt_set` — question, `source`, question_id; written by answer-coverage and
   the `--passages` post-step), `extras.external_presence` (declared external links with
   resolution status and owned-vs-independent classification), and `extras.search_declared`.
-- `references/probe_protocol.md` — the probe method: phrasing, recording, outcome classes,
+- `<orchestrator>/references/probe_protocol.md` — the probe method: phrasing, recording, outcome classes,
   budget, variability rules. It binds everything below.
 - Runtime contract: one read, one judgment, one write — at most 3 tool calls. Off-site probes
   are the first thing shed at the deadline; an unrun probe is `not_evaluated`, never inferred.
@@ -50,10 +50,14 @@ invention.
    and finish. Do not approximate a probe from external presence.
 2. **Select ≤ 6 probes** from the prompt set, weighted toward market-derived questions (they
    are the demand the site did not choose). At most one brand-anchored probe, labeled as
-   navigational.
-3. **Run and record** each probe per `references/probe_protocol.md`: engine, exact query,
+   navigational. If the prompt set is empty or missing, stop here: emit all four OFF checks
+   as `not_evaluated` and finish — never improvise probes to fill the silence.
+3. **Run and record** each probe per `<orchestrator>/references/probe_protocol.md`: engine, exact query,
    UTC timestamp, cited URLs (first 10), outcome class. One run is one observation; never
-   reconcile repeats into a single answer.
+   reconcile repeats into a single answer. Record each row inside that check's `observations`
+   (engine, query, timestamp, cited URLs, outcome) — never as top-level fragment keys. A check
+   with zero recorded rows is `not_evaluated`, never a pass or finding: no rows means
+   no observation.
 4. **Gate the checks** from the recorded rows:
    - **OFF-BRAND-ABSENT** — prompts where no answer mentions the brand.
    - **OFF-THIRD-PARTY-PREFERRED** — prompts where a third party is cited though an official
@@ -100,7 +104,7 @@ invention.
 - The finding fragment to the orchestrator's `audit/findings/` path, shaped by
   `../audit-orchestrator/references/finding_fragment.json`. Never assign `F-` ids; the
   orchestrator does. Done means valid: the fragment parses as JSON and matches
-  `finding_fragment.json` before handoff (`python3 -m json.tool <fragment>` suffices) — an
+  `finding_fragment.json` before handoff (`python3 <orchestrator>/scripts/validate_fragment.py <fragment>` (checks the schema, not just syntax)) — an
   unvalidated fragment is not a handoff. Building it programmatically (e.g. `json.dump`)
   avoids the most common failure here. Every recorded probe row appears in the relevant result's `observations`
   so the report's evidence is reconstructible. This skill carries no `opportunities[]` —

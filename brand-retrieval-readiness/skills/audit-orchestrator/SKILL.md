@@ -55,9 +55,18 @@ from there with explicit paths.
   write (its fragment) — at most 3 tool calls each. Report build is at most 2 calls. Under time
   pressure, emit partial findings with `not_evaluated` — a valid partial report always beats an
   overrun.
+- **One pass, no polish (this is what fits the clock):** judge each specialist from its
+  excerpt in a single authoring round and write the fragment once. Do not re-read inputs,
+  re-derive script outputs, or revise across multiple passes — a complete-enough fragment now
+  beats a perfect one never. If evidence is missing, emit partial findings with the rest
+  `not_evaluated` and move on. Shed in this order when forced to choose: off-site probes,
+  then `opportunities`, then whole judgments to `not_evaluated` — never the report itself.
 - **Context:** NEVER read `audit/snapshot.json` — it contains raw HTML and will overflow your
-  context. Only scripts touch it. You read excerpt files and script stdout only. Any script
-  output larger than a screen means you called it wrong.
+  context. Only scripts touch it. You read excerpt files and script stdout only. The command
+  strings in steps 4–6 are complete: do not read script or registry source to reconstruct
+  them, and do not re-read schemas before judging — schemas are the merge's contract and
+  your excerpts already conform. Any script output larger than a screen means you called
+  it wrong.
 
 ## Procedure
 
@@ -70,7 +79,8 @@ from there with explicit paths.
    `saas, ecommerce, local-business, docs-developer, publisher, gov-edu, marketplace-platform,
    org-portfolio` — this gates page sampling, question archetypes, in-scope claim types, and
    which checks apply. Heuristics: a shop selling physical goods is `ecommerce` (not `saas`);
-   a company site describing services/work is `org-portfolio`. Declare only capabilities this
+   a company site describing services/work is `org-portfolio`. Classify from what the site
+   sells or does — never from words in the domain string, which is not evidence. Declare only capabilities this
    run will actually exercise as comma-separated flags.
    Then run:
    `python3 <orchestrator>/scripts/collect_snapshot.py --url <URL> --out ./audit/snapshot.json --site-type <types> --capabilities web_fetch[,web_search][,browser][,subagents]`
@@ -130,7 +140,8 @@ this session. Where the harness supports concurrent subagents, the same waves di
 one-specialist-per-subagent instead — substantially faster, and the audit stays bounded at
 5 minutes since specialists share no state. Give each one: the
 marketplace root, the snapshot path, its excerpt path, the path to its SKILL.md, and its output
-path. Require it to return ONLY a one-line status. Never the fragment contents, never page text.
+path. Dispatch with write access to the working directory — the specialist must write its
+own fragment file, so a read-only subagent is not acceptable. Require it to return ONLY a one-line status. Never the fragment contents, never page text.
 
 - **Wave 1 (no dependencies):** access-discovery, representation-parity, entity-consistency,
   freshness-consistency, answer-coverage

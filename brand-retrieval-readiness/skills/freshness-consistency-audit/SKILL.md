@@ -91,7 +91,7 @@ conflicts are the measurable, on-site form of that failure.
 - The finding fragment to the orchestrator's `audit/findings/` path, shaped by
   `../audit-orchestrator/references/finding_fragment.json`. Never assign `F-` ids; the
   orchestrator does. Done means valid: the fragment parses as JSON and matches
-  `finding_fragment.json` before handoff (`python3 -m json.tool <fragment>` suffices) — an
+  `finding_fragment.json` before handoff (`python3 <orchestrator>/scripts/validate_fragment.py <fragment>` (checks the schema, not just syntax)) — an
   unvalidated fragment is not a handoff. Building it programmatically (e.g. `json.dump`)
   avoids the most common failure here. Report which pages supplied each side of every conflict so the
   remediation can name the source of truth.

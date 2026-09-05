@@ -54,7 +54,9 @@ gap between them is where the findings and the opportunities live.
    the referral skill's fragment-survivability check measure your quoting style instead of
    the site; if the answer genuinely needs more than ~600 characters, redraw tighter or leave
    the question to `opportunities`.
-3. **Write `audit/passages.json`** (excerpts_schema `passages_file`): every question with its
+3. **Write `audit/passages.json`** (excerpts_schema `passages_file`): shape literal
+   `{"kind": "passages", "skill_id": "answer-coverage-audit", "questions": [...]}` — the
+   array key is `questions`, never `passages`. Every question with its
    `expected_page`, verbatim `candidate_passage`, `qualifier_present`, `source_location`. For
    unanswered questions write the best near-miss passage you can find or omit the entry — the
    orchestrator's `--passages` post-step tolerates missing pages.
@@ -108,7 +110,6 @@ gap between them is where the findings and the opportunities live.
   (excerpts_schema `passages_file` shape; fragment per
   `../audit-orchestrator/references/finding_fragment.json`, including its `opportunities[]`).
 - Never assign `F-` ids; the orchestrator does. Done means valid: the fragment parses as
-  JSON and matches `finding_fragment.json` before handoff (`python3 -m json.tool <fragment>`
-  suffices) — an unvalidated fragment is not a handoff. Building it programmatically (e.g.
+  JSON and matches `finding_fragment.json` before handoff (`python3 <orchestrator>/scripts/validate_fragment.py <fragment>` (checks the schema, not just syntax)) — an unvalidated fragment is not a handoff. Building it programmatically (e.g.
   `json.dump`) avoids the most common failure here. State in your summary which questions were
   market-derived so the offsite probe set inherits the right phrasing.

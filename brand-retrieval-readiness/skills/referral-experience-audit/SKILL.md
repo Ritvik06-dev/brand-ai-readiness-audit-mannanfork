@@ -109,7 +109,7 @@ visitor, judged here because they land on the citation).
 - The finding fragment to the orchestrator's `audit/findings/` path, shaped by
   `../audit-orchestrator/references/finding_fragment.json`. Never assign `F-` ids; the
   orchestrator does. Done means valid: the fragment parses as JSON and matches
-  `finding_fragment.json` before handoff (`python3 -m json.tool <fragment>` suffices) — an
+  `finding_fragment.json` before handoff (`python3 <orchestrator>/scripts/validate_fragment.py <fragment>` (checks the schema, not just syntax)) — an
   unvalidated fragment is not a handoff. Building it programmatically (e.g. `json.dump`)
   avoids the most common failure here. In your summary, name which family each finding belongs to so the report
   can order continuation failures before generic friction.
