@@ -251,7 +251,8 @@
                 }
               },
               "cf_mitigated": { "type": ["boolean", "null"] },
-              "differential": { "type": ["string", "null"], "description": "e.g. 'browser 200 / bot-UA 403' - suspected edge discrimination, medium confidence cap" }
+              "differential": { "type": ["string", "null"], "description": "e.g. 'browser 200 / bot-UA 403' - suspected edge discrimination, medium confidence cap" },
+              "note": { "type": ["string", "null"], "description": "set when the probe was skipped, e.g. robots disallows the token - the rule itself is the finding" }
             }
           }
         }

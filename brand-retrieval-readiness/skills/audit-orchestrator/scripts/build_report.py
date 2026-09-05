@@ -156,11 +156,29 @@ def main():
     not_evaluated = []
     skill_ids = set()
     all_reported = set()
+    lint_warnings = []
+    limitations_extra = []
     for frag_path in args.fragment:
-        frag = load_json(frag_path)
+        try:
+            frag = load_json(frag_path)
+        except (OSError, ValueError) as e:
+            lint_warnings.append("fragment %s unreadable (%s); its checks are not_evaluated"
+                                 % (frag_path, str(e)[:80]))
+            limitations_extra.append("Specialist fragment %s was unreadable and was excluded."
+                                     % os.path.basename(frag_path))
+            continue
         errs = validate(frag, frag_schema)
         if errs:
-            fail("fragment %s does not validate against finding_fragment.json" % frag_path, errs)
+            # Salvage, not refusal: one invalid fragment must never zero the
+            # audit. Skip its results; the not_evaluated backfill below marks
+            # all of that skill's checks, and the report still gets built.
+            sid = frag.get("skill_id") if isinstance(frag, dict) else None
+            lint_warnings.append("fragment %s failed finding_fragment.json validation: %s"
+                                 % (frag_path, errs[0][:120]))
+            limitations_extra.append("Specialist fragment %s (%s) failed validation and was"
+                                     " excluded; its checks are not_evaluated."
+                                     % (os.path.basename(frag_path), sid or "unknown skill"))
+            continue
         skill_ids.add(frag["skill_id"])
         for result in frag.get("results", []):
             all_reported.add(result["check_id"])
@@ -213,10 +231,27 @@ def main():
         used_ids.add(f["check_id"])
     for ne in not_evaluated:
         used_ids.add(ne["check_id"])
+
+    # Unknown check ids are a build bug, but never a reason to zero the audit:
+    # drop affected results to not_evaluated and warn.
+    unknown_ids = {f["check_id"] for f in findings} - set(checks_by_id)
+    if unknown_ids:
+        kept = []
+        for f in findings:
+            if f["check_id"] in unknown_ids:
+                not_evaluated.append({"check_id": f["check_id"],
+                                      "reason": "check_id not in check_catalog.json; result dropped"})
+            else:
+                kept.append(f)
+        findings = kept
+        for u in sorted(unknown_ids):
+            lint_warnings.append("unknown check_id %s dropped to not_evaluated" % u)
+    for ne in not_evaluated:
+        if ne["check_id"] not in checks_by_id:
+            lint_warnings.append("not_evaluated entry references unknown check_id %s" % ne["check_id"])
     unknown = sorted(used_ids - set(checks_by_id))
     if unknown:
-        fail("check_ids not present in check_catalog.json",
-             ["%s: invented id" % u for u in unknown])
+        limitations_extra.append("Unknown check ids were reported and dropped: %s." % ", ".join(unknown))
 
     # Coverage backfill: every catalog check no fragment reported lands in
     # not_evaluated, so the report's coverage claim is complete and honest.
@@ -260,14 +295,18 @@ def main():
         rec.update(f)
         ordered.append(rec)
 
-    # Reporting gate rule 1: critical requires high confidence.
-    gate_errs = []
+    # Reporting gate rule 1, enforced by normalization instead of refusal: a
+    # finding that claims critical without high confidence is clamped to high
+    # and recorded - the audit always produces a report.
     for f in ordered:
         if f["severity"] == "critical" and f.get("confidence") != "high":
-            gate_errs.append("%s: critical requires confidence=high (got %s)"
-                             % (f["id"], f.get("confidence")))
-    if gate_errs:
-        fail("reporting gate", gate_errs)
+            f["severity"] = "high"
+            f["suggested_action"]["priority"] = "high" if \
+                f["suggested_action"].get("priority") == "critical" else \
+                f["suggested_action"].get("priority", "high")
+            lint_warnings.append("%s: severity clamped critical->high; confidence=%s does not"
+                                 " satisfy severity_model rule 1 (critical requires high)"
+                                 % (f["check_id"], f.get("confidence")))
 
     counts = {"critical": 0, "high": 0, "medium": 0, "low": 0}
     for f in ordered:
@@ -303,6 +342,7 @@ def main():
     limitations = (["Single-skill degraded mode: no specialist fragments were available;"
                     " specialists_resolved = 0 and the judgment checks are not_evaluated."]
                    if args.degraded else [])
+    limitations.extend(limitations_extra)
     limitations.append("The opportunities[] proactive set lands with the remediation"
                        " playbook (Phase 6).")
     report = {
@@ -322,7 +362,7 @@ def main():
         "human_summary": _human_summary(args.site, ordered, needs_verification,
                                         not_evaluated),
     }
-    report["lint_warnings"] = lint_report(report)
+    report["lint_warnings"] = lint_warnings + lint_report(report)
 
     errs = validate(report, out_schema)
     if errs:

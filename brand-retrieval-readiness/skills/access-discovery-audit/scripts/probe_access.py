@@ -103,6 +103,12 @@ def result(check_id, gate, urls=None, observations=None, candidate=None,
 def candidate(title, severity, confidence, evidence, why, action_summary,
               priority, surfaces=None, effort=None, owner=None,
               acceptance=None):
+    # Belt-and-braces with severity_model rule 1: a specialist can never emit
+    # critical without high confidence - clamp at emit, and build_report
+    # normalizes (with a lint warning) if anything still slips through.
+    if severity == "critical" and confidence != "high":
+        severity = "high"
+        priority = "high" if priority == "critical" else priority
     out = {
         "title": title,
         "severity": severity,
@@ -535,20 +541,21 @@ def check_bot_challenge(snap):
         candidate=candidate(
             "Automated retrieval traffic receives %s where direct traffic succeeds"
             % ", ".join(str(p.get("status")) for p in hits),
-            "critical" if len(hits) >= 2 else "high", "medium",
+            "high", "medium",
             "; ".join("%s UA received %s (cf-mitigated: %s, content-type: %s) while a direct "
                       "fetch returned 200 on the same path" % (p.get("token"), p.get("status"),
                                                                p.get("cf_mitigated"),
                                                                p.get("content_type"))
                       for p in hits) + ". Same-IP spoofed-UA evidence: suspected edge "
-            "discrimination, capped at medium confidence per severity_model.md.",
+            "discrimination, capped at medium confidence per severity_model.md, so this "
+            "finding's severity ceiling is high (rule 1: critical requires high confidence).",
             "A WAF challenge served to retrieval-bot UAs blocks citation surfaces at the "
             "edge; Cloudflare-documented signals are the cf-mitigated header and a forced "
             "text/html content-type even on non-HTML requests.",
             "Allowlist the documented retrieval crawlers at the edge (or add a verified-bot "
             "rule); verify with owner logs or provider IP lists "
             "(claude.com/crawling/bots.json, perplexity.com/perplexitybot.json).",
-            "critical" if len(hits) >= 2 else "high",
+            "high",
             surfaces=["chatgpt_search", "perplexity_retrieval", "claude_search",
                       "bing_copilot"],
             effort="medium", owner="infrastructure",

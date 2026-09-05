@@ -86,7 +86,7 @@
       "category": "access-discovery",
       "stage": "reach",
       "pattern_template": "Automated retrieval traffic receives a challenge where browser traffic succeeds",
-      "mechanism": "A bot challenge (WAF) served to retrieval-bot UAs but not browser UAs - distinguishable by differential status plus cf-mitigated headers and text/html content-type on non-HTML requests - blocks citation surfaces at the edge.",
+      "mechanism": "A bot challenge (WAF) served to retrieval-bot UAs but not browser UAs - distinguishable by differential status plus cf-mitigated headers and text/html content-type on non-HTML requests - blocks citation surfaces at the edge. Same-IP spoofed-UA evidence caps confidence at medium, so this check's practical severity ceiling is high (rule 1: critical requires high confidence).",
       "evidence_required": "direct-measurement",
       "evidence_template": "{token} UA received {bot_status} with {signal} where browser UA received {browser_status} on the same path; challenged responses were {content_type}.",
       "severity_band": ["high", "critical"],

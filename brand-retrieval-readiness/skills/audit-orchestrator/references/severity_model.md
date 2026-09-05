@@ -41,7 +41,10 @@ lists in the remediation; never fetch them at runtime).
 
 ## Reporting gate (hard rules)
 
-1. **`critical` requires `confidence: high`.** No exceptions.
+1. **`critical` requires `confidence: high`.** No exceptions. Enforcement is by
+   normalization, not report refusal: a candidate claiming critical at lower confidence is
+   clamped to high by `build_report.py` and recorded in `lint_warnings` - one overstated
+   finding must never zero the whole audit.
 2. Low-confidence hypotheses are never emitted as findings — they go to `needs_verification`.
 3. A failed tool call, timeout, or unavailable capability is **never** a site defect; it goes to
    `coverage.capabilities_unavailable` / `not_evaluated`.

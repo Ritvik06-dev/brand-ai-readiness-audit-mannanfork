@@ -784,7 +784,7 @@ def probe_ua(fetcher, homepage_url, robots_groups, robots_status, browser_status
         out.append({"token": token, "requested_path": homepage_url,
                     "robots_allows": allowed_here, "status": status,
                     "content_type": headers.get("content-type"),
-                    "cf_mitigated": headers.get("cf-mitigated"),
+                    "cf_mitigated": True if headers.get("cf-mitigated") else None,
                     "differential": diff,
                     "headers": {"server": headers.get("server"),
                                 "cf_ray": headers.get("cf-ray"),
