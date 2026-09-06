@@ -1,31 +1,78 @@
 # Brand Retrieval Readiness — Agent Skill Marketplace
 
-> **Build status (Phase 0):** skeleton. This README is finalized in Phase 7 per `BUILD_PLAN.md`.
+Point an agent at a cold URL and get one evidence-backed report: where the brand
+stands in AI-assisted discovery, and what to fix first. Zero setup, read-only, no
+instrumentation, no account. The audit follows the assistant pipeline — **reach →
+read → extract → identify → trust → cite → land** — and for each break reports
+which stage failed, on which retrieval surfaces, with quoted evidence and a stated
+confidence.
 
-Planned opener (INDEPENDENT_REVIEW §10):
+This complements instrumented enterprise monitoring rather than cloning it: those
+tools watch known topics on configured infrastructure over time; this diagnoses an
+unknown site from the outside in one pass and hands over an acceptance test per fix.
 
-1. This marketplace audits the assistant pipeline — **reach → read → extract → identify → trust →
-   land** — and reports, for each break, which stage failed, on which retrieval surfaces, with
-   quoted evidence and a stated confidence.
-2. Scripts own what must be exact: status codes, parses, counts, timeouts, schema validation.
-   The model owns what regex cannot judge: whether a passage stands alone as an answer, whether
-   two claims contradict, whether a name is ambiguous.
-3. It refuses to treat training-crawler policy, a missing `llms.txt`, or a guessed Core Web Vital
-   as an outage — Google's own documentation states there are no special requirements or schema
-   needed to appear in AI features, and the checks here are built accordingly.
+## Division of labor
+
+Scripts own what must be exact — status codes, parses, counts, timeouts, schema
+validation. The model owns what regex cannot judge — whether a passage answers a
+question, whether two claims contradict, whether a name is ambiguous. Every model
+verdict cites a recorded observation (engine, query, timestamp, quoted text with
+page URL). No record means `not_evaluated`, never a finding, never a pass.
 
 ## Skills
 
-| Skill | Role | Driven by |
-|---|---|---|
-| `audit-orchestrator` | **entrypoint** — snapshot, composition, correlation, report | `collect_snapshot.py`, `build_report.py` |
-| `access-discovery-audit` | reach: robots roles, index controls, canonicals, challenges | `probe_access.py` |
-| `representation-parity-audit` | read: raw/text/state/metadata fact parity | `analyze_representation.py` |
-| `answer-coverage-audit` | extract: two-source question set → passage completeness | judgment over bounded excerpts |
-| `entity-consistency-audit` | identify: JSON-LD validity, identity matrix, ambiguity | `check_entities.py` + judgment |
-| `freshness-consistency-audit` | trust: dates, versions, self-contradictions | judgment over claim index |
-| `offsite-visibility-audit` | cite: capability-gated prompt-set probes; external presence | judgment + recorded probes |
-| `referral-experience-audit` | land: above-fold confirmation, overlays, soft 404s, fragments | judgment + snapshot probes |
+| Skill | Stage | Role | Driven by |
+|---|---|---|---|
+| `audit-orchestrator` | — | **entrypoint** — snapshot, composition, merge, report | `collect_snapshot.py`, `build_report.py` |
+| `access-discovery-audit` | reach | robots roles, index controls, canonicals, challenges, sitemaps, link rot | `probe_access.py` |
+| `representation-parity-audit` | read | raw/response/state/metadata fact parity | `analyze_representation.py` |
+| `answer-coverage-audit` | extract | two-source question set → passage completeness | judgment over bounded excerpts |
+| `entity-consistency-audit` | identify | JSON-LD validity, identity matrix, ambiguity gate | `check_entities.py` + judgment |
+| `freshness-consistency-audit` | trust | dates, versions, cross-page self-contradictions | judgment over claim index + claim matrix |
+| `offsite-visibility-audit` | cite | capability-gated prompt-set probes; external presence | judgment + recorded probes |
+| `referral-experience-audit` | land | above-fold confirmation, overlays, soft 404s, fragments | judgment + snapshot probes |
+
+Seven specialists plus one entrypoint. The split is pipeline stages with disjoint
+inputs and evidence — remove any skill and the report loses that layer. Specialists
+share no state: each reads the snapshot plus its own prepared excerpt and writes
+one finding fragment. The orchestrator assigns finding IDs, dedups root causes,
+enforces the severity model, validates the report schema, and prints the summary.
+
+## How to run
+
+From the marketplace root, one call runs phase 1 (snapshot + the three scripted
+specialists + fragment validation) into `./audit/`:
+
+```
+python3 skills/audit-orchestrator/scripts/run_phase1.py --url <URL> --out-dir ./audit \
+  --site-type <types> --capabilities web_fetch[,web_search][,browser][,subagents]
+```
+
+Judgment specialists follow their SKILL.md files against the prepared excerpts, then:
+
+```
+python3 skills/audit-orchestrator/scripts/build_report.py --site <host> \
+  --out ./audit/report.json --snapshot ./audit/snapshot.json --fragment ./audit/findings/<each>.json
+```
+
+(`--fragment` repeats per file; the individual script commands in each SKILL.md remain
+as fallback.)
+
+`report.json` validates against `skills/audit-orchestrator/references/output_schema.json`
+and always includes the required floor (`site`, `audited_at`, counts-by-severity
+summary, findings with `id/title/severity/evidence/suggested_action`) plus coverage,
+confidence, `opportunities[]`, `needs_verification[]`, `not_evaluated[]`,
+`limitations[]`, and a `human_summary` written for a non-expert.
+
+**Composition, fallback, dispatch.** Specialists resolve via `marketplace.json`
+(manifest order is dependency order), with a fallback chain down to single-skill
+degraded mode — a degraded run still emits a schema-valid report, marked `partial`
+when nothing was captured. Where the harness runs work concurrently, Wave 1
+(access, representation, entity, freshness, answer-coverage) fans out, then the
+`--passages` post-step, then Wave 2 (referral, offsite); serial execution runs the
+same waves in order. A failed specialist contributes `not_evaluated`, never a
+failed audit. Off-site probes (≤6) are capability-gated and first shed at the
+deadline; absence of search is `not_evaluated`, never invention.
 
 ## Validation
 
@@ -33,4 +80,36 @@ Planned opener (INDEPENDENT_REVIEW §10):
 uvx --from skills-ref agentskills validate skills/<skill-name>
 ```
 
-(Note: the `skills-ref` package installs a binary named `agentskills`, not `skills-ref`.)
+(Note: the `skills-ref` package installs a binary named `agentskills`.)
+`tests/` holds contract tests, a 27-scenario fixture suite asserting expected
+findings *and* non-findings, and a smoke runner. The false-positive corpus
+(nextjs.org, gov.uk, wikipedia.org, linear.app, allbirds.com) re-runs green on
+severity (zero critical; highs hand-verified true positives with egress notes).
+
+## Measured runtime
+
+Snapshot collection is bounded (120 s network deadline, serial requests) and
+typically lands in 5–30 s; the scripted specialists take seconds via the phase-1
+runner. Wall-clock is dominated by model judgment turns. Measured end-to-end
+across harnesses: ~2–4 minutes fast runs, ~6–8 minutes serial with live probes
+(probes run ~15–20 s each all-in); dense or ambiguous sites deliberate longer on
+any model. Whole-audit budget is 5 minutes; shed order is probes → opportunities
+→ judgments → never the report, and a valid partial always beats an overrun.
+
+## Limitations — what this will never claim
+
+- No universal AI-readiness score. Named, denominator-explicit ratios only.
+- No guaranteed rankings, citations, or surface outcomes in any suggested action.
+- Training-crawler blocks are policy, not outages. A missing `llms.txt` is never
+  a discoverability defect (docs-sites navigation aid at most). No estimated Core
+  Web Vitals, ever — static risk observations only.
+- Probe observations vary by egress, locale, account state, and time (observed
+  live: one path returned 200, a login-200 redirect chain, and a 404 from three
+  contexts). One run is one observation; findings carry the qualifier.
+- The above-fold proxy (~600 chars of main-content extraction) measures extraction offset,
+  not fold position — observed knife-edge (640-confirm vs 648-flag on the same rule);
+  heading confirmation and browser observation upgrade it where available.
+- Severity and confidence are separate dimensions; `critical` requires high
+  confidence; low-confidence hypotheses go to `needs_verification`.
+- Findings are site-level patterns with counts and quotes; `affected_urls` carries
+  instances. A missing topic is an opportunity, not a defect.

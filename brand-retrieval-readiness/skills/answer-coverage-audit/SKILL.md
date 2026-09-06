@@ -46,7 +46,8 @@ gap between them is where the findings and the opportunities live.
 1. **Generate the question set** per `references/question_archetypes.md`: 5–8 questions
    weighted toward the site type's core archetypes, at least two market-derived. Record each
    question's `source` and `intent`. `extras.coverage_appendix` (heading inventory, nav labels,
-   claim-topic counts) aids coverage — you still author every question; never emit its rows
+   claim-topic counts) aids coverage — apply the archetypes without restating the table; model
+   still authors every question; never emit appendix rows
    as questions.
 2. **Map and judge.** For each question find the expected page and its best candidate passage
    (verbatim, ≤2,000 chars). Judge completeness: subject explicit, claim with units/timeframe,

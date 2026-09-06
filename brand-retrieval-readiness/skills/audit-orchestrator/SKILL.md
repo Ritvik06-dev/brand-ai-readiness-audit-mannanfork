@@ -62,7 +62,8 @@ from there with explicit paths.
   strings in steps 4–6 are complete: do not read script or registry source to reconstruct
   them, and do not re-read schemas before judging — schemas are the merge's contract and
   your excerpts already conform. `extras.fragment_shape` in each excerpt is the complete
-  fragment contract — never open `finding_fragment.json` mid-audit. Any script output larger than a screen means you called
+  fragment contract — never open `finding_fragment.json` mid-audit. Apply references directly;
+  never restate their contents (tables, templates, shapes) in thinking or output. Any script output larger than a screen means you called
   it wrong.
 
 ## Procedure
@@ -146,13 +147,12 @@ from there with explicit paths.
    is never a defect and never silently dropped. After a valid report: stop. No further
    verification passes.
 
-## Dispatch (parallel first, serial fallback)
+## Dispatch (serial default, parallel by experience)
 
-Where the harness can run work concurrently, fan out the waves below — one task per
-specialist — instead of running steps 4–5 inline. Specialists share no state and only
-read the snapshot plus their own excerpt, so fan-out is substantially faster with
-identical inputs and outputs. Where concurrent work is unavailable, run the same waves
-in order in this session.
+Run the waves below serially in this session. If you have already completed parallel
+fan-out successfully in this session, you may fan out instead — never test, probe, or
+deliberate which mode to use; one sentence, then execute. Specialists share no state and only
+read the snapshot plus their own excerpt, so either mode gives identical inputs and outputs.
 
 Hand each delegated task its snapshot path, excerpt path, SKILL.md path, and output path,
 and require back a one-line status only — never fragment contents, never page text. Two
