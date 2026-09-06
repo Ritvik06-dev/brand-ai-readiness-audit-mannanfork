@@ -286,7 +286,9 @@ def main():
         findings = kept
         for u in sorted(unknown_ids):
             lint_warnings.append("unknown check_id %s dropped to not_evaluated" % u)
-    pair_pat = re.compile(r"\b[A-Z]{3}(?:-[A-Z0-9]+)+\b")
+    # A cited-id token needs a 3-letter prefix AND a >=3-char tail ("UTF-8" is
+    # prose; real ids like ZZZ-NOTREAL cited in evidence are hallucination signals).
+    pair_pat = re.compile(r"\b[A-Z]{3}-[A-Z0-9][A-Z0-9-]{2,}\b")
     for f in findings:
         for cid in sorted(set(pair_pat.findall(f.get("evidence", ""))) - {f["check_id"]}):
             if cid not in checks_by_id:
@@ -373,6 +375,16 @@ def main():
                                  " satisfy severity_model rule 1 (critical requires high)"
                                  % (f["check_id"], f.get("confidence")))
 
+    # Severity-band lint (warn only, never clamp): a judgment may weigh severity
+    # within the catalog's band; landing outside it means the check routing or the
+    # severity call drifted from the catalog - surface it, do not silently pass it.
+    for f in ordered:
+        band = checks_by_id[f["check_id"]].get("severity_band") or []
+        if band and f["severity"] not in band:
+            lint_warnings.append("%s: severity %s outside catalog severity_band %s "
+                                 "(warning only - re-check routing and severity)"
+                                 % (f["check_id"], f["severity"], band))
+
     # Opportunities: merge, dedupe by title (stable order), never counted as findings.
     seen_titles = set()
     merged_opps = []
@@ -430,8 +442,8 @@ def main():
     if no_capture:
         limitations.append("No pages were captured (unreachable site or total capture failure); "
                            "runnable checks are not_evaluated and there is nothing to find.")
-    limitations.append("The opportunities[] proactive set lands with the remediation"
-                       " playbook (Phase 6).")
+    limitations.append("The opportunities[] proactive set maps to the remediation playbook "
+                       "(references/remediation_playbook.json).")
     report = {
         "site": args.site,
         "audited_at": now,
@@ -460,6 +472,13 @@ def main():
     with open(args.out, "w", encoding="utf-8") as fh:
         json.dump(report, fh, indent=2, ensure_ascii=False)
         fh.write("\n")
+    md_path = os.path.splitext(args.out)[0] + ".md"
+    try:
+        with open(md_path, "w", encoding="utf-8") as fh:
+            fh.write(_report_markdown(report))
+        print("build_report: %s written" % md_path)
+    except OSError as e:  # noqa: BLE001 - the .md is additive; never fail the report over it
+        print("build_report: note - report.md not written (%s)" % e)
     print("build_report: report written to %s (%d findings, %d needs_verification,"
           " %d not_evaluated)" % (args.out, len(ordered), len(needs_verification),
                                   len(not_evaluated)))
@@ -500,6 +519,50 @@ def lint_report(report):
             if re.search(pattern, f.get("evidence", "")):
                 warnings.append("finding.evidence: %s (warning only - verify in context)" % why)
     return warnings
+
+
+def _report_markdown(report):
+    """Plain-English rendering of the report - additive artifact alongside report.json."""
+    cov = report.get("coverage", {})
+    lines = [
+        "# AI-retrieval readiness audit — %s" % report.get("site", ""),
+        "",
+        "_Audited %s · %s · %d pages sampled of %d discovered · %d finding(s)_" % (
+            report.get("audited_at", ""), report.get("audit_status", ""),
+            cov.get("pages_selected", 0), cov.get("pages_discovered", 0),
+            report.get("summary", {}).get("total_findings", 0)),
+        "",
+    ]
+    summary = report.get("summary", {})
+    lines.append("**Severity:** %d critical · %d high · %d medium · %d low" % (
+        summary.get("critical", 0), summary.get("high", 0),
+        summary.get("medium", 0), summary.get("low", 0)))
+    lines.append("")
+    lines.append(report.get("human_summary", ""))
+    opps = report.get("opportunities", [])
+    if opps:
+        lines.append("")
+        lines.append("## Opportunities (unmet demand, not defects)")
+        for o in opps:
+            lines.append("- **%s** — %s" % (o.get("title", ""), o.get("rationale", "")))
+    nv = report.get("needs_verification", [])
+    if nv:
+        lines.append("")
+        lines.append("## Needs verification (not defects yet)")
+        for n in nv:
+            lines.append("- %s" % (n.get("title") or n.get("check_id") or json.dumps(n)[:120]))
+    ne = report.get("not_evaluated", [])
+    if ne:
+        lines.append("")
+        lines.append("## Not evaluated (%d) — never defects" % len(ne))
+        for n in ne:
+            lines.append("- %s — %s" % (n.get("check_id", ""), n.get("reason", "")))
+    if report.get("lint_warnings"):
+        lines.append("")
+        lines.append("## Lint warnings")
+        for w in report["lint_warnings"]:
+            lines.append("- %s" % w)
+    return "\n".join(lines) + "\n"
 
 
 def _human_summary(site, findings, needs_verification, not_evaluated):

@@ -47,7 +47,14 @@ lives elsewhere.
 
 ## Sizing
 
-5–8 questions per audit, spread across the applicable archetypes, weighted toward core. At
-least two questions must be **market-derived** (asked the way a customer would phrase it, not
-the way the site's nav labels it) — they are the prompt set offsite-visibility probes and the
-source of `opportunities[]` when no page answers them.
+4–6 questions per audit, spread across the applicable core archetypes, weighted toward core.
+At least two must be **market-derived** (asked the way a customer would phrase it, not the way
+the site's nav labels it) — they are the prompt set offsite-visibility probes and the source
+of `opportunities[]` when no page answers them. Prefer the questions that map to *sampled*
+pages: a question whose expected page was not sampled can only end in `not_evaluated`.
+One question per archetype; take a second archetype only when the site type's core row has
+fewer than four applicable archetypes.
+
+Default transaction and trust ON for every site type unless the coverage appendix shows
+neither fees nor credentials anywhere. Include a comparison question only when the excerpt
+shows a competing-option surface (tier grid, vs-page, plan grid) — never invent a competitor.

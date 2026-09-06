@@ -11,7 +11,7 @@ metadata:
 # Audit Orchestrator (marketplace entrypoint)
 
 This marketplace audits the assistant pipeline — **reach → read → extract → identify → trust →
-land** — and reports, for each break, which stage failed, on which retrieval surfaces, with
+cite → land** — and reports, for each break, which stage failed, on which retrieval surfaces, with
 quoted evidence and a stated confidence.
 
 **Division of labor:** scripts own what must be exact — status codes, parses, counts, timeouts,
@@ -51,20 +51,29 @@ from there with explicit paths.
   requests. Do not retry it; read its printed notes instead.
 - **Off-site probes:** hard sub-budget of <= 6 queries, and the first thing shed at the
   deadline. Absence of a search capability means `not_evaluated`, never a finding.
+- **Clock:** elapsed time is printed, never guessed. `run_phase1` prints its started
+  wall-clock and elapsed seconds; the `--passages` post-step prints seconds elapsed since the
+  snapshot. When the post-step reports > 210 s (3.5 of the 5 minutes), shed off-site probes:
+  every OFF check becomes `not_evaluated` ("deadline shed") and the remaining judgments finish
+  in one pass each.
 - **Model turns:** judge each specialist from its excerpt in a single pass and write the
   fragment once; run the report build once. Emit partial findings with `not_evaluated`
   rather than overrun — a valid partial report always beats an overrun. Do not re-read
   inputs, re-derive script outputs, or revise across multiple passes. If evidence is
   missing, emit partial findings with the rest `not_evaluated` and move on. Shed in this
   order: off-site probes, then `opportunities`, then whole judgments to `not_evaluated` —
-  never the report itself.
-- **Context:** Do not read `audit/snapshot.json`. Only scripts touch it. You read excerpt files and script stdout only. The command
+  never the report itself. Deliberation budget: settle each ambiguity in one sentence and
+  act — never re-list a settled enumeration (question set, probe results) before acting on
+  it; if a judgment is already past 3 turns, finish it with the remainder `not_evaluated`.
+- **Context:** Do not read `audit/snapshot.json`. Only scripts touch it. You read excerpt files and script stdout only. Read each excerpt
+  file once, top to bottom; if a read is truncated, continue from the truncation offset rather
+  than restarting. A script's stdout larger than a screen means you called it wrong — file
+  reads are exempt; read them fully. The command
   strings in steps 4–6 are complete: do not read script or registry source to reconstruct
   them, and do not re-read schemas before judging — schemas are the merge's contract and
   your excerpts already conform. `extras.fragment_shape` in each excerpt is the complete
   fragment contract — never open `finding_fragment.json` mid-audit. Apply references directly;
-  never restate their contents (tables, templates, shapes) in thinking or output. Any script output larger than a screen means you called
-  it wrong.
+  never restate their contents (tables, templates, shapes) in thinking or output.
 
 ## Procedure
 
@@ -82,7 +91,8 @@ from there with explicit paths.
    the site to classify; classify from the request context and confirm against the snapshot
    summary. Recorded here, frozen for the run — never revisited in judgments; genuine doubt
    goes to `limitations`, not re-derivation. Declare only capabilities this
-   run will actually exercise as comma-separated flags.
+   run will actually exercise as comma-separated flags — declare `subagents` when the
+   harness exposes them, because the dispatch step fans out with them.
    Then run:
    `python3 <orchestrator>/scripts/collect_snapshot.py --url <URL> --out ./audit/snapshot.json --site-type <types> --capabilities web_fetch[,web_search][,browser][,subagents]`
    Scripts take declared facts as flags and never probe for tools. It validates its own output,
@@ -103,19 +113,22 @@ from there with explicit paths.
    is absent, run the three scripts individually with
    `--snapshot ./audit/snapshot.json --out ./audit/findings/<skill-id>.json` (script named in
    each skill's SKILL.md).
-   Then **complete semantic gates**: reopen each fragment once (fragments are small JSON —
-   this is not the snapshot) and finish any result carrying `gate: "pass"` with
-   `evidence_quality: "semantic-judgment"` — currently `ENT-AMBIGUOUS-NAME`: follow that
-   skill's SKILL.md, either promote it to a finding with quoted evidence or leave it as a
-   pass with the reason, and write the fragment back before step 6.
+   Then **complete semantic gates**: reopen the entity fragment once (fragments are small JSON —
+   this is not the snapshot) and finish `ENT-AMBIGUOUS-NAME` — the one check whose prepared
+   gate is a model judgment: per that skill's SKILL.md, either promote it to a finding with
+   quoted evidence or leave it as a pass, and record the verdict by adding
+   `model_completion: "<1-3 sentence reason>"` inside that result's `observations`. Other
+   `gate: "pass"` results carrying `evidence_quality: "semantic-judgment"` are prepared
+   passes — leave them untouched. Write the fragment back before step 6.
 
 5. **Judgment specialists** (in manifest order). Each fragment must validate against
    `finding_fragment.json` before step 6 (each SKILL.md states the gate); the merge salvages
    anything invalid to `not_evaluated` with a lint warning.
-   Before authoring each specialist's fragment, read that specialist's SKILL.md — when you
-   reach its step, not upfront with the others; quote only
-   `check_id`s listed for it in `references/check_catalog.json` — ids outside the catalog do
-   not exist. Remove helper/scratch scripts from the working directory before step 6.
+   In a composed run (excerpts exist) the excerpt is the complete contract — `checks`,
+   `fragment_shape`, `authoring_rules`, `severity_facts` — do not open the specialist's
+   SKILL.md mid-audit; it is the standalone reference. Quote only
+   `check_id`s from the excerpt's `extras.checks` — ids outside the catalog do not exist.
+   Remove helper/scratch scripts from the working directory before step 6.
    - `answer-coverage-audit`: read `audit/excerpts/answer-coverage-audit.json` ONCE, follow its
      SKILL.md, write `audit/findings/answer-coverage-audit.json` AND `audit/passages.json`
      (questions from two sources: `site-derived` and `market-derived`; market-derived questions
@@ -126,11 +139,14 @@ from there with explicit paths.
    - `freshness-consistency-audit`: read `audit/excerpts/freshness-consistency-audit.json`
      once; write its fragment.
    - `offsite-visibility-audit` (wave 2): read `audit/excerpts/offsite-visibility-audit.json`
-     (the prompt set) once. Run live probes ONLY if `web_search` was declared and the deadline
-     allows — off-site probes are the first thing shed. Without search, reason over the
-     snapshot's `external_presence[]` only; never invent probe results.
+     (the prompt set) once. Run live probes ONLY if `web_search` was declared and the elapsed
+     print from the post-step is <= 210 s — past that, shed: all four OFF checks become
+     `not_evaluated` ("deadline shed"). Without search, reason over the snapshot's
+     `external_presence[]` only; never invent probe results.
    - `referral-experience-audit` (wave 2): read `audit/excerpts/referral-experience-audit.json`
-     once, plus `audit/passages_checked.json`; write its fragment.
+     once, plus `audit/passages_checked.json`; write its fragment. Past 210 s elapsed,
+     referral judges continuation failures for at most 3 questions (its SKILL.md timebox)
+     and offsite-visibility sheds entirely — then go straight to step 6.
 
 6. **Report.** First validate every fragment in one pass (`validate_fragment.py` over each
    file in `./audit/findings/`); on INVALID run with `--fix` first and hand-edit only the
@@ -147,18 +163,20 @@ from there with explicit paths.
    is never a defect and never silently dropped. After a valid report: stop. No further
    verification passes.
 
-## Dispatch (serial default, parallel by experience)
+## Dispatch (parallel-first when subagents are declared, serial fallback)
 
-Run the waves below serially in this session. If you have already completed parallel
-fan-out successfully in this session, you may fan out instead — never test, probe, or
-deliberate which mode to use; one sentence, then execute. Specialists share no state and only
-read the snapshot plus their own excerpt, so either mode gives identical inputs and outputs.
+Wall-clock is the binding constraint. If the declared capabilities include `subagents`, fan
+the waves out as concurrent tasks — never test, probe, or deliberate which mode to use; one
+sentence, then execute. If `subagents` was not declared or the fan-out is unavailable, run
+the waves serially in this session. Specialists share no state and only read the snapshot
+plus their own excerpt, so either mode gives identical inputs and outputs.
 
 Hand each delegated task its snapshot path, excerpt path, SKILL.md path, and output path,
 and require back a one-line status only — never fragment contents, never page text. Two
 conditions: the task must be able to write its own fragment file, and off-site probing
-stays with the parent session (probes need search and file-writing together) — never hand
-offsite-visibility to a task that cannot do both.
+stays with the parent session — worker tasks have no search tool, so when
+fanning out the parent performs offsite-visibility itself: it selects and runs the probes,
+records the rows, and writes the offsite fragment directly.
 
 - **Wave 1 (no dependencies):** access-discovery, representation-parity, entity-consistency,
   freshness-consistency, answer-coverage
@@ -189,10 +207,12 @@ Try in order; use the first that works:
 
 ## Severity and confidence
 
-Read `references/severity_model.md` before writing any candidate finding. In short: severity
-and confidence are separate; `critical` requires high confidence; low-confidence hypotheses go
-to `needs_verification`, never findings; a failed tool call is never a site defect; findings
-name the affected retrieval surfaces from `references/provider_registry.json`.
+In a composed run the severity facts ride in each excerpt (`extras.severity_facts`) —
+`references/severity_model.md` is the canonical reference for standalone and degraded runs.
+In short: severity and confidence are separate; `critical` requires high confidence;
+low-confidence hypotheses go to `needs_verification`, never findings; a failed tool call is
+never a site defect; findings name the affected retrieval surfaces from
+`references/provider_registry.json`.
 
 ## Output
 

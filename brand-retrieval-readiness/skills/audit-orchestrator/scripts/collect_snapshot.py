@@ -1003,7 +1003,8 @@ def cap_claims(claims):
     return out
 
 
-def build_excerpts(pages, sitemap_summary, probes, catalog=None, corroboration=None):
+def build_excerpts(pages, sitemap_summary, probes, catalog=None, corroboration=None,
+                   site_type=""):
     budgets = {"answer-coverage-audit": 24000, "freshness-consistency-audit": 16000,
                "referral-experience-audit": 6000}
     ans_pages, frs_pages, ref_pages, empty_urls = [], [], [], []
@@ -1099,11 +1100,70 @@ def build_excerpts(pages, sitemap_summary, probes, catalog=None, corroboration=N
         if len(json.dumps(claim_matrix)) > 8000:
             break
         claim_matrix.append({"type": t, "entries": matrix[t][:8]})
+    authoring_rules = {
+        "answer-coverage-audit": [
+            "Draft questions with short verbatim anchors; run build_passages.py; fix only FAIL lines.",
+            "Question set frozen once written; gates read it, never rebuild it.",
+            "Territory rule keys on the page's section headings, not the question's source.",
+            "Market-derived demand with no claiming page goes to opportunities[], never findings.",
+            "Timebox: past 150s elapsed, core-archetype questions only, rest not_evaluated.",
+        ],
+        "freshness-consistency-audit": [
+            "FRS-CLAIM-CONFLICT is cross-page only; same-page conflicts belong to entity.",
+            "lastmod present_count 0 is absence - not_evaluated, never flagged as uniform.",
+            "Stale sitewide copyright vs newer content is FRS-DATE-CONFLICT at low.",
+            "Date arithmetic is direct-measurement; contradiction adjudication is semantic.",
+        ],
+        "offsite-visibility-audit": [
+            "Run one date -u before the first probe; every row of a batch carries that batch time.",
+            "At most one brand-anchored probe, labeled navigational; rows only in matching checks.",
+            "A check with zero recorded rows is not_evaluated, never a pass or finding.",
+            "Findings capped at medium confidence unless deterministic on-site corroboration.",
+        ],
+        "referral-experience-audit": [
+            "first_window in passages_checked is presumptive; headline/collapse/qualifier judgment stays with you.",
+            "Relays in extras are candidates; the pass/finding gate stays with you.",
+            "Timebox: fragment authored by 300s; past it, continuation judgments for 3 questions max.",
+            "Name each finding's family (continuation vs generic friction) in the summary.",
+        ],
+    }
+    severity_facts = {
+        "critical_requires_high_confidence": True,
+        "corroboration_damping": "3+ independent resolving anchors with brand match damp "
+                                 "absence-type findings one step (floor low); never contradictions, "
+                                 "parse failures, wrong facts, or outages",
+        "probe_cap": "off-site probe findings capped at medium confidence unless deterministic "
+                     "on-site corroboration; a probe counts as run only with engine, query, "
+                     "timestamp, result recorded",
+        "low_confidence": "low-confidence hypotheses go to needs_verification, never findings",
+    }
+    # Suggested question slots: archetype + a page whose headings claim that
+    # territory (keyword map, deterministic). The model still phrases and judges.
+    slot_map = {"transaction": ("fee", "pricing", "price", "cost", "tuition", "admission"),
+                "procedure": ("how", "install", "guide", "apply", "setup", "steps"),
+                "temporal": ("version", "release", "deadline", "update", "changelog", "news"),
+                "local": ("location", "contact", "hours", "address", "visit", "campus"),
+                "trust": ("certif", "accredit", "recogn", "award", "policy", "privacy"),
+                "capability": ("feature", "support", "service", "program", "product"),
+                "comparison": ("compare", " vs ", "plans", "tiers")}
+    site_types = site_type or ""
+    suggested_slots = [{"archetype": "identity", "expected_page": pages[0]["requested_url"] if pages else None,
+                        "note": "homepage claims identity"}]
+    for p in pages:
+        heads = " ".join((h.get("text") or "") for h in (p.get("headings") or [])).lower()
+        for arch, kws in slot_map.items():
+            if any(k in heads for k in kws) and len(suggested_slots) < 6:
+                suggested_slots.append({"archetype": arch,
+                                        "expected_page": p["requested_url"],
+                                        "note": "headings claim this territory"})
     ans = {"kind": "excerpt", "skill_id": "answer-coverage-audit", "budget_chars": 24000,
            "generated_at": _now(), "pages": ans_pages,
            "pages_without_content": empty_urls,
            "extras": {"checks": checks_for(catalog, "answer-coverage-audit"),
                       "fragment_shape": FRAGMENT_SHAPE,
+                      "authoring_rules": authoring_rules["answer-coverage-audit"],
+                      "severity_facts": severity_facts,
+                      "suggested_slots": suggested_slots,
                       "corroboration": corroboration or {"independent_resolving": 0,
                                                           "brand_matched": 0},
                       "coverage_appendix": coverage_appendix}}
@@ -1118,15 +1178,64 @@ def build_excerpts(pages, sitemap_summary, probes, catalog=None, corroboration=N
                                      for p in pages],
                       "checks": checks_for(catalog, "freshness-consistency-audit"),
                       "fragment_shape": FRAGMENT_SHAPE,
+                      "authoring_rules": authoring_rules["freshness-consistency-audit"],
+                      "severity_facts": severity_facts,
                       "corroboration": corroboration or {"independent_resolving": 0,
                                                           "brand_matched": 0},
                       "claim_matrix": claim_matrix}}
+    # Pre-digested deterministic relays: finding-candidate + evidence line per
+    # check. The pass/finding gate stays with the model (body-quality nuance,
+    # e.g. a 404 body with nav but no search, is a judgment).
+    relays = {}
+    soft = probes.get("soft_404")
+    if soft is None:
+        relays["REF-SOFT-404"] = {"candidate_gate": "not_evaluated",
+            "evidence": "no soft-404 observation was recorded by the collector"}
+        relays["REF-404-DEAD-END"] = {"candidate_gate": "not_evaluated",
+            "evidence": "no genuine 404 body was captured to judge"}
+    else:
+        if soft.get("is_soft_404"):
+            relays["REF-SOFT-404"] = {"candidate_gate": "finding",
+                "evidence": "A nonexistent path (%s) returned HTTP 200 - junk URLs are "
+                            "accepted as pages." % soft.get("probe_path", "")}
+        else:
+            relays["REF-SOFT-404"] = {"candidate_gate": "pass",
+                "evidence": "A nonexistent path returned HTTP %s, not a page - junk URLs "
+                            "are rejected." % soft.get("status")}
+        if soft.get("status") == 404:
+            bq = soft.get("body_quality", {})
+            has_recovery = bq.get("has_search") or bq.get("has_navigation") or bq.get("has_suggestions")
+            relays["REF-404-DEAD-END"] = {"candidate_gate": "pass" if has_recovery else "finding",
+                "evidence": ("The 404 body offers recovery: " +
+                             ", ".join(k for k in ("has_search", "has_navigation", "has_suggestions")
+                                      if bq.get(k)) if has_recovery else
+                             "The 404 body offers no search, no navigation, no suggestions "
+                             "- a mangled citation URL is a dead end.")}
+        else:
+            relays["REF-404-DEAD-END"] = {"candidate_gate": "not_evaluated",
+                "evidence": "no genuine 404 body was captured to judge (probe returned %s)"
+                            % soft.get("status")}
+    redirects = probes.get("redirect_path_preservation", [])
+    dropped = [r for r in redirects if r.get("path_preserved") is False]
+    if not redirects:
+        relays["REF-PATH-DROP-REDIRECT"] = {"candidate_gate": "not_evaluated",
+            "evidence": "no redirect variants were probed"}
+    elif dropped:
+        relays["REF-PATH-DROP-REDIRECT"] = {"candidate_gate": "finding",
+            "evidence": "%d redirect variant(s) dropped the deep path: %s"
+                        % (len(dropped), "; ".join(r.get("variant", "?") for r in dropped[:3]))}
+    else:
+        relays["REF-PATH-DROP-REDIRECT"] = {"candidate_gate": "pass",
+            "evidence": "all %d probed redirect variant(s) preserve the deep path" % len(redirects)}
     ref = {"kind": "excerpt", "skill_id": "referral-experience-audit",
            "budget_chars": 6000, "generated_at": _now(), "pages": ref_pages,
            "pages_without_content": empty_urls,
            "extras": {"checks": checks_for(catalog, "referral-experience-audit"),
                       "fragment_shape": FRAGMENT_SHAPE,
+                      "authoring_rules": authoring_rules["referral-experience-audit"],
+                      "severity_facts": severity_facts,
                       "screen_windows": screen_windows,
+                      "relays": relays,
                       "pages_signals": [
                {"url": p["requested_url"],
                 "overlay_in_raw_html": p["interactive"]["overlay_in_raw_html"],
@@ -1138,6 +1247,37 @@ def build_excerpts(pages, sitemap_summary, probes, catalog=None, corroboration=N
                "note": "passages_checked.json arrives after the --passages post-step;"
                        " REF-SOFT-404 / REF-404-DEAD-END / REF-PATH-DROP-REDIRECT read"
                        " the probe results here"}}
+    # Hoist byte-identical shared preamble bytes out of the per-page excerpts:
+    # nav-heavy sites repeat ~1.5K chars on every page, which alone can exhaust
+    # the excerpt budget and force chunked reads. The prefix is stripped from
+    # each page's first location (text_offset records the strip length so
+    # offsets stay resolvable) and carried once in extras.shared_preamble.
+    firsts = [pg["main_content_excerpts"][0] for pg in ans["pages"]
+              if pg.get("main_content_excerpts")]
+    if len(firsts) >= 4:
+        # majority prefix: longest common prefix shared by at least half the
+        # pages (one divergent template must not collapse the hoist to empty)
+        candidate = max(firsts, key=lambda f: len(f["text"]))["text"]
+        half = (len(firsts) + 1) // 2
+        prefix, best = "", ""
+        for i in range(1, len(candidate) + 1):
+            stem = candidate[:i]
+            agree = sum(1 for f in firsts if f["text"].startswith(stem))
+            if agree >= half:
+                prefix = stem
+            else:
+                break
+        if len(prefix) >= 400:
+            for pg in ans["pages"]:
+                locs = pg.get("main_content_excerpts", [])
+                if locs and locs[0]["text"].startswith(prefix):
+                    locs[0]["text"] = locs[0]["text"][len(prefix):]
+                    locs[0]["text_offset"] = len(prefix)
+            ans["extras"]["shared_preamble"] = {
+                "chars": len(prefix), "pages": len(firsts),
+                "sample": prefix[:160],
+                "note": "identical opening block hoisted from every page's first "
+                        "excerpt location; per-page text begins after text_offset"}
     return ans, frs, ref
 
 
@@ -1418,7 +1558,7 @@ def run_collect(args):
     catalog = _load_catalog()
     ans, frs, ref = build_excerpts(pages, sitemap_summary, {"soft_404": soft,
                                                             "redirect_path_preservation": redirects},
-                                   catalog=catalog,
+                                   catalog=catalog, site_type=",".join(site_types),
                                    corroboration={
                                        "independent_resolving": sum(
                                            1 for e in external
@@ -1524,9 +1664,43 @@ def _fold_confusables(s):
     return " ".join((s or "").translate(table).split())
 
 
+def first_window_verdict(page, candidate):
+    """Deterministic half of REF-ANSWER-NOT-CONFIRMED: is the candidate within
+    the first ~600 characters of the page's block extraction? Presumptive only -
+    the referral judgment (headline confirmation, collapse, qualifiers) stays
+    with the model. None when there is no candidate or the page is missing."""
+    if not candidate or page is None:
+        return None
+    try:
+        ex = PageExtractor(page["requested_url"])
+        ex.feed(page.get("raw_html") or "")
+        ex.close()
+        ex.finalize()
+        want = " ".join((candidate or "").split())
+        joined = " ".join(" ".join(b.split()) for b in ex.blocks)
+        idx = joined.find(want)
+        if idx < 0:
+            return None
+        return {"offset": idx, "in_window": idx <= 600,
+                "basis": "first 600 characters of the page's block extraction"}
+    except Exception:  # noqa: BLE001 - relay, never crash the post-step
+        return None
+
+
 def run_passages(args):
     snapshot = load_json(args.snapshot)
     passages = load_json(args.passages)
+    # Clock signal for the shed rule: the model sees real elapsed time at the
+    # wave-2 boundary instead of guessing.
+    try:
+        elapsed = time.time() - datetime.datetime.fromisoformat(
+            snapshot["audited_at"].replace("Z", "+00:00")).timestamp()
+        shed = elapsed > 210
+        print("BUDGET %ds/300s | SHED: %s | TIMEBOX: %s"
+              % (int(elapsed), "offsite (+referral 3q)" if shed else "none",
+                 "answer-coverage=core-only" if elapsed > 150 else "full"))
+    except (KeyError, ValueError, AttributeError):
+        pass
     if passages.get("kind") != "passages":
         fail("--passages file must be a passages file (kind=passages)", [])
     if not isinstance(passages.get("questions"), list) or not passages["questions"]:
@@ -1610,7 +1784,8 @@ def run_passages(args):
                             "expected_page may be wrong or the passage paraphrased")
         results.append({"question_id": q["question_id"], "page_url": q.get("expected_page"),
                         "contiguous": contiguous, "quote": ((q.get("candidate_passage") or "")[:200]
-                        if contiguous else None), "note": note})
+                        if contiguous else None), "note": note,
+                        "first_window": first_window_verdict(page, q.get("candidate_passage"))})
     out = {"kind": "passages_checked", "generated_at": _now(), "results": results}
     with open(args.out, "w", encoding="utf-8") as fh:
         json.dump(out, fh, indent=2, ensure_ascii=False)
@@ -1648,6 +1823,24 @@ def run_passages(args):
                    "fragment_shape": FRAGMENT_SHAPE},
     }
     offsite_path = os.path.join(exc_dir, "offsite-visibility-audit.json")
+    # Pairing relay: the offsite model needs the phase-1 verdicts (e.g. whether
+    # ENT-AMBIGUOUS-NAME was completed as a finding) without re-reading fragments.
+    phase1_findings = []
+    findings_dir = os.path.join(os.path.dirname(os.path.abspath(args.snapshot)), "findings")
+    if os.path.isdir(findings_dir):
+        for fname in sorted(os.listdir(findings_dir)):
+            if not fname.endswith(".json"):
+                continue
+            try:
+                fd = json.load(open(os.path.join(findings_dir, fname)))
+            except (OSError, ValueError):
+                continue
+            for r in fd.get("results", []):
+                if r.get("gate") == "finding":
+                    phase1_findings.append({"skill_id": fd.get("skill_id"),
+                                            "check_id": r.get("check_id"),
+                                            "title": (r.get("candidate_finding") or {}).get("title", "")[:110]})
+    offsite["extras"]["phase1_findings"] = phase1_findings
     with open(offsite_path, "w", encoding="utf-8") as fh:
         json.dump(offsite, fh, indent=2, ensure_ascii=False)
         fh.write("\n")

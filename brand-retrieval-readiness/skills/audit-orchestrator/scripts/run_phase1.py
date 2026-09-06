@@ -23,6 +23,8 @@ import json
 import os
 import subprocess
 import sys
+import time
+from datetime import datetime, timezone
 
 SPECIALISTS = (
     ("access-discovery-audit", "access-discovery-audit/scripts/probe_access.py"),
@@ -79,9 +81,59 @@ def summarize_fragment(path):
     gates: dict = {}
     for r in frag.get("results", []):
         gates[r.get("gate", "?")] = gates.get(r.get("gate", "?"), 0) + 1
-    return (len([1 for r in frag.get("results", []) if r.get("gate") == "finding"]),
+    findings = [{"check_id": r.get("check_id"),
+                 "title": (r.get("candidate_finding") or {}).get("title", "")[:90]}
+                for r in frag.get("results", []) if r.get("gate") == "finding"]
+    return (len(findings),
             gates.get("pass", 0),
-            len(frag.get("not_evaluated", [])) + gates.get("not_evaluated", 0))
+            len(frag.get("not_evaluated", [])) + gates.get("not_evaluated", 0),
+            findings)
+
+
+def inject_extras(out_dir, frag_paths):
+    """Relay phase-1 deterministic facts into the judgment excerpts so the model
+    never re-reads phase-1 fragments for pairing, and never re-derives the
+    boilerplate gate numbers (analyze_representation already measured them)."""
+    phase1_findings, extraction_obs, extraction_gate = [], None, None
+    for frag in frag_paths:
+        try:
+            data = json.load(open(frag))
+        except (OSError, ValueError):
+            continue
+        for r in data.get("results", []):
+            if r.get("gate") == "finding":
+                phase1_findings.append({"skill_id": data.get("skill_id"),
+                                        "check_id": r.get("check_id"),
+                                        "title": (r.get("candidate_finding") or {}).get("title", "")[:110]})
+            if r.get("check_id") == "REP-EXTRACTION-LOSS":
+                extraction_obs = r.get("observations") or {}
+                extraction_gate = r.get("gate")
+    if not phase1_findings and not extraction_obs:
+        return
+    phase1_findings = [{k: v for k, v in f.items() if v} for f in phase1_findings]
+    for name in ("answer-coverage-audit", "freshness-consistency-audit",
+                 "referral-experience-audit"):
+        path = os.path.join(out_dir, "excerpts", "%s.json" % name)
+        try:
+            exc = json.load(open(path))
+        except (OSError, ValueError):
+            continue
+        extras = exc.setdefault("extras", {})
+        extras["phase1_findings"] = phase1_findings
+        if name == "answer-coverage-audit" and extraction_obs:
+            extras["boilerplate"] = {
+                "pages_sharing_preamble": extraction_obs.get("pages_sharing_preamble",
+                    extraction_obs.get("pages_sharing_long_preamble", 0)),
+                "preamble_chars": extraction_obs.get("preamble_chars", 0),
+                "median_unique_content_offset": extraction_obs.get("median_unique_content_offset", 0),
+                "rep_extraction_loss_gate": extraction_gate or "pass",
+                "note": "measured by analyze_representation.py (REP-EXTRACTION-LOSS); "
+                        "the ANS-BOILERPLATE-DROWNING gate is shared-preamble pages >= half "
+                        "the sample AND median offset > 1500 chars"}
+        try:
+            json.dump(exc, open(path, "w"), indent=1, ensure_ascii=False)
+        except OSError:
+            pass
 
 
 def main(argv=None):
@@ -100,6 +152,10 @@ def main(argv=None):
     frag_dir = os.path.join(out_dir, "findings")
     os.makedirs(frag_dir, exist_ok=True)
     snap = os.path.join(out_dir, "snapshot.json")
+    t0 = time.monotonic()
+    started = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    print("phase1 wall-clock: started %s (shed off-site probes if more than 210 s "
+          "have elapsed when wave 2 begins)" % started)
 
     cmd = [sys.executable, os.path.join(here, "collect_snapshot.py"),
            "--url", args.url, "--out", snap, "--site-type", args.site_type,
@@ -130,8 +186,10 @@ def main(argv=None):
         if summary is None:
             rows.append((skill_id, "no fragment (rc=%d) - contributes not_evaluated" % rc))
         else:
-            f, ps, ne = summary
+            f, ps, ne, fl = summary
             rows.append((skill_id, "fragment ok: %d finding(s), %d pass, %d ne" % (f, ps, ne)))
+            for item in fl:
+                rows.append(("", "FINDING %s: %s" % (item["check_id"], item["title"])))
             frag_paths.append(frag)
     validator = os.path.join(here, "validate_fragment.py")
     if frag_paths and os.path.exists(validator):
@@ -140,9 +198,14 @@ def main(argv=None):
         if rc != 0:
             for ln in out.strip().splitlines()[:8]:
                 rows.append(("", ln[:200]))
+    inject_extras(out_dir, frag_paths)
     print("phase1 status:")
     for skill_id, status in rows:
         print("  %-28s %s" % (skill_id, status))
+    print("BUDGET %ds/300s after phase1 | SHED: %s | TIMEBOX: %s" %
+          (int(time.monotonic() - t0),
+           "offsite (+referral 3q)" if time.monotonic() - t0 > 210 else "none",
+           "answer-coverage=core-only" if time.monotonic() - t0 > 150 else "full"))
     return 0
 
 

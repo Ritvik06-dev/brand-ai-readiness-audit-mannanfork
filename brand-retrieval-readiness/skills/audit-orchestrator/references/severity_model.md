@@ -94,3 +94,5 @@ owned-only, unresolved, or brand-unmatched never damps.
 - Exactly one severity per finding; findings sorted by severity then id so output is stable
   across runs.
 - Every `check_id` in findings resolves to a defined check; no invented ids.
+- A finding whose severity lands outside its check's catalog `severity_band` raises a lint
+  warning (routing or severity drift to re-check) — never a clamp, never a refusal.

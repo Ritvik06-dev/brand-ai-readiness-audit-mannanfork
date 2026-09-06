@@ -24,6 +24,7 @@ import json
 import os
 import re
 import sys
+import time
 from urllib.parse import urlparse
 
 CHECK_IDS = [
@@ -759,6 +760,13 @@ def main():
     notes = []
     try:
         snap = load_json(args.snapshot)
+        try:
+            _t0 = datetime.datetime.fromisoformat(
+                snap["audited_at"].replace("Z", "+00:00")).timestamp()
+            print("audit elapsed since snapshot: %ds (budget 300s; timeboxes apply)"
+                  % max(0, int(time.time() - _t0)))
+        except (KeyError, ValueError, AttributeError, OSError):
+            pass
     except (OSError, ValueError) as e:
         fragment = not_evaluated_fragment("snapshot unreadable: %s" % e)
         soft_validate(fragment, args.fragment_schema or default_schema_path(), notes)

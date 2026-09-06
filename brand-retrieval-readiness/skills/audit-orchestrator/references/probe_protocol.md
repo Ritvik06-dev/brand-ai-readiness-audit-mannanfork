@@ -1,7 +1,7 @@
 # Probe Protocol — how off-site visibility probes are phrased and recorded
 
-This is the contract for any live retrieval-surface probe (offsite-visibility-audit, and the
-human field study in `research/field-study/`). It describes method, not tools: the executing
+This is the contract for any live retrieval-surface probe (offsite-visibility-audit). It
+describes method, not tools: the executing
 agent uses whatever search capability the harness declared (`web_search`); scripts never call
 engines. It does not go stale because it names no tool.
 
@@ -9,7 +9,11 @@ engines. It does not go stale because it names no tool.
 
 1. **Evidence not assertion.** A probe counts as run only when its observation is recorded:
    engine, exact query string, timestamp (UTC), and result. No record → the check is
-   `not_evaluated`, whatever the intent was. Probe findings carry an egress/time qualifier:
+   `not_evaluated`, whatever the intent was. The timestamp is a recorded clock, never an
+   estimate: run one `date -u` immediately before the first probe and stamp every row of
+   that batch with that single batch time; if a written time is later found wrong, rewrite
+   the rows before handoff — a predicted or evenly-spaced time in evidence is a defect.
+   Probe findings carry an egress/time qualifier:
    one run is one observation from the auditor egress at the recorded timestamp — edge
    behavior varies by visitor context, so a probe row is never presented as universal.
 2. **Never a score.** A sample of prompts is an observation set, not a visibility score. One
@@ -17,7 +21,9 @@ engines. It does not go stale because it names no tool.
    recorded probe rows as evidence — never as "the brand ranks Nth" or "visibility is X%".
 3. **Budget.** ≤ 6 probes per audit, drawn from the answer-coverage prompt set
    (`audit/excerpts/offsite-visibility-audit.json` → `extras.prompt_set`). Off-site probes are
-   the first thing shed at the deadline; an unrun probe is `not_evaluated`, never inferred.
+   the first thing shed at the deadline: check elapsed time before probing (the `--passages`
+   post-step prints seconds elapsed since the snapshot); past 210 s, every OFF check is
+   `not_evaluated` ("deadline shed"). An unrun probe is `not_evaluated`, never inferred.
 4. **Phrasing.** Probes are natural customer questions, not brand-leading searches. Prefer the
    market-derived questions from the prompt set verbatim — they are the demand the site did not
    choose. A probe phrased as `"Acme <brand-feature>"` measures navigational retrieval, not

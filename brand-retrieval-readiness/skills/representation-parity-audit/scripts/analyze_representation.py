@@ -24,6 +24,7 @@ import json
 import os
 import re
 import sys
+import time
 from statistics import median
 from urllib.parse import urlparse
 
@@ -243,45 +244,58 @@ def analyze(pages):
             "evidence_quality": "direct-representation-comparison"})
 
     # --- REP-EXTRACTION-LOSS ------------------------------------------------
-    preambles = {}
-    for p in pages:
-        first = next((norm(ln) for ln in (p.get("visible_text") or "").splitlines()
-                      if norm(ln)), "")
-        if len(first) >= 80:
-            preambles.setdefault(first, []).append(p)
-    shared = {t: ps for t, ps in preambles.items() if len(ps) >= max(2, len(pages) // 2)}
-    if shared:
-        shared_lines = set(shared)
-        offsets = []
-        for p in pages:
-            off, seen_unique = 0, False
-            for ln in (p.get("visible_text") or "").splitlines():
-                n = norm(ln)
-                if n and n not in shared_lines:
-                    seen_unique = True
+    # Shared opening boilerplate: a line is boilerplate if at least half the
+    # sampled pages carry it within their first K lines (position-agnostic —
+    # nav blocks vary in exact order/active-item per page). Per page, unique
+    # content starts at the first opening line not in the shared set.
+    K = 150
+    def opening_lines(p):
+        out = []
+        for ln in (p.get("visible_text") or "").splitlines():
+            n = norm(ln)
+            if n:
+                out.append(n)
+                if len(out) >= K:
                     break
+        return out
+
+    line_lists = [opening_lines(p) for p in pages]
+    min_share = max(2, (len(pages) + 1) // 2)
+    freq = {}
+    for x in line_lists:
+        for ln in set(x):
+            freq[ln] = freq.get(ln, 0) + 1
+    shared_set = {ln for ln, c in freq.items() if c >= min_share}
+    offsets, sharers = [], 0
+    for x in line_lists:
+        off, skipped = 0, 0
+        for ln in x:
+            if ln in shared_set:
                 off += len(ln) + 1
-            if seen_unique:
-                offsets.append(off)
-        med = int(median(offsets)) if offsets else 0
-    else:
-        med = 0
-    if shared and med > 1500:
-        t, ps = max(shared.items(), key=lambda kv: len(kv[1]))
+                skipped += 1
+            else:
+                break
+        if skipped >= 5:  # a real shared block, not one stray repeated line
+            offsets.append(off)
+            sharers += 1
+    med = int(median(offsets)) if offsets else 0
+    preamble_chars = med
+    if sharers >= min_share and med > 1500:
+        head_lines = [ln for ln in (line_lists[0] if line_lists else []) if ln in shared_set][:3]
         results.append({
             "check_id": "REP-EXTRACTION-LOSS", "gate": "finding",
-            "urls": [q["requested_url"] for q in ps[:8]],
-            "observations": {"pages_sharing_preamble": len(ps), "preamble_chars": len(t),
+            "urls": urls[:8],
+            "observations": {"pages_sharing_preamble": sharers, "preamble_chars": preamble_chars,
                              "median_unique_content_offset": med},
             "evidence_quality": "direct-representation-comparison",
             "candidate_finding": {
                 "title": "Repeated boilerplate displaces page-unique content in text "
                          "extraction",
                 "severity": "medium", "confidence": "medium",
-                "evidence": "%d/%d pages share an identical %d-char preamble and their "
+                "evidence": "%d/%d pages open with shared boilerplate and their "
                             "page-unique content starts at a median offset of %d characters "
-                            "into the extraction; preamble: \"%s\"."
-                            % (len(ps), len(pages), len(t), med, t[:200]),
+                            "into the extraction; shared opening lines include: \"%s\"."
+                            % (sharers, len(pages), med, " / ".join(head_lines)[:200]),
                 "why_it_matters": "Extraction-first retrieval reads the same boilerplate "
                                   "before any page-specific answer, so answer-bearing content "
                                   "is displaced deep into the extracted text.",
@@ -294,11 +308,11 @@ def analyze(pages):
     else:
         results.append({
             "check_id": "REP-EXTRACTION-LOSS", "gate": "pass", "urls": urls[:8],
-            "observations": {"pages_sharing_long_preamble":
-                             sum(len(ps) for ps in shared.values()) if shared else 0,
+            "observations": {"pages_sharing_preamble": sharers,
+                             "preamble_chars": preamble_chars,
                              "median_unique_content_offset": med,
-                             "note": "flag threshold: shared >=80-char preamble on half the "
-                                     "pages AND median unique-content offset > 1500 chars"},
+                             "note": "flag threshold: shared opening block on half the pages "
+                                     "AND median unique-content offset > 1500 chars"},
             "evidence_quality": "direct-representation-comparison"})
 
     # --- REP-NON-TEXT-LOCKIN -------------------------------------------------
@@ -530,6 +544,14 @@ def main():
     args = ap.parse_args()
 
     snap = load_json(args.snapshot)
+
+    try:
+        _t0 = datetime.datetime.fromisoformat(
+            snap["audited_at"].replace("Z", "+00:00")).timestamp()
+        print("audit elapsed since snapshot: %ds (budget 300s; timeboxes apply)"
+              % max(0, int(time.time() - _t0)))
+    except (KeyError, ValueError, AttributeError, OSError):
+        pass
     pages = snap.get("pages", [])
     if not pages:
         frag = {"skill_id": "representation-parity-audit", "mode": "snapshot",

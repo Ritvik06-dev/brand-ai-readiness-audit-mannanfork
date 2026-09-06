@@ -46,7 +46,7 @@ show (developers.google.com/search/docs/appearance/ai-features), and Bing docume
 ## Procedure
 
 Run `scripts/probe_access.py --snapshot <path> --out <fragment path>`. The script implements
-all eleven checks deterministically:
+all twelve checks deterministically:
 
 1. **ACC-ROBOTS-ROLE** — for each `search-index` role token in `robots.groups`, match
    `disallowed_paths` against sampled important page paths (longest-match wins; allow rules

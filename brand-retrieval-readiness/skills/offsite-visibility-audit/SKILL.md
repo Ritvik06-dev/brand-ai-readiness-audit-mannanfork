@@ -2,6 +2,7 @@
 name: offsite-visibility-audit
 description: Probe how retrieval surfaces answer the site's inferred prompt set — is the brand mentioned, is the official page cited, is a third party cited instead, is the fact stated correctly, is a different entity resolved — with every observation recording engine, query, timestamp and result; without a search capability it degrades to snapshot-only reasoning over the site's external presence and never invents probe results. Normally invoked by audit-orchestrator; use alone only when asked specifically about off-site visibility concerns.
 license: MIT
+compatibility: Requires Python 3.9+ (standard library only). Live probes need a harness-declared search capability; without one the skill degrades to snapshot-only reasoning.
 allowed-tools: Bash Read Write
 metadata:
   version: "1.0.0"
@@ -39,6 +40,8 @@ invention.
   `extras.checks` carries the check templates; `extras.fragment_shape` the fragment keys.
 - `<orchestrator>/references/probe_protocol.md` — the probe method: phrasing, recording, outcome classes,
   budget, variability rules. It binds everything below.
+- `extras.phase1_findings` carries the phase-1 verdicts (e.g. whether ENT-AMBIGUOUS-NAME was
+  completed as a finding) — pair without re-reading fragments.
 - Runtime contract: judge from the excerpt only, in a single pass, and write the fragment
   once; emit partial findings with `not_evaluated` rather than overrun. Off-site probes
   are the first thing shed at the deadline; an unrun probe is `not_evaluated`, never inferred.
@@ -51,11 +54,17 @@ invention.
    capability declared; live probes not run"), contribute the snapshot-only observations below,
    and finish. Do not approximate a probe from external presence.
 2. **Select ≤ 6 probes** from the prompt set, weighted toward market-derived questions (they
-   are the demand the site did not choose). At most one brand-anchored probe, labeled as
-   navigational. If the prompt set is empty or missing, stop here: emit all four OFF checks
-   as `not_evaluated` and finish — never improvise probes to fill the silence.
+   are the demand the site did not choose). At most one brand-anchored probe, labeled by
+   adding `label: "navigational"` to that probe's row (market-derived rows carry no label).
+   First read the clock: the `--passages` post-step printed seconds elapsed since the
+   snapshot — if it said > 210 s (or more than 3.5 min have passed since the audit began),
+   shed: emit all four OFF checks as `not_evaluated` ("deadline shed") and finish. If the
+   prompt set is empty or missing, stop here: emit all four OFF checks as `not_evaluated`
+   and finish — never improvise probes to fill the silence.
 3. **Run and record** each probe per `<orchestrator>/references/probe_protocol.md`: engine, exact query,
-   UTC timestamp, cited URLs (first 10), outcome class. One run is one observation; never
+   UTC timestamp, cited URLs (first 10), outcome class. Timestamps are recorded clocks,
+   never estimates: run one `date -u` immediately before the first probe and stamp every
+   row of a batch with that single batch time. One run is one observation; never
    reconcile repeats into a single answer. Record each row inside that check's `observations`
    (engine, query, timestamp, cited URLs, outcome) — never as top-level fragment keys. A check
    with zero recorded rows is `not_evaluated`, never a pass or finding: no rows means
@@ -66,7 +75,8 @@ invention.
      page answers the same question (that precondition is what separates this from
      ANS-QUESTION-UNANSWERED's cause).
    - **OFF-FACT-STATED-WRONG** — the money case: an answer states a fact the official page
-     contradicts; quote both, with the official URL.
+     contradicts; quote both, with the official URL. Only `fact-stated-wrongly` rows belong
+     in this check's observations; the other rows live under OFF-BRAND-ABSENT.
    - **OFF-WRONG-ENTITY** — the prompt resolves to a different entity sharing the name;
      record the observed effect and pair it with ENT-AMBIGUOUS-NAME (on-site cause) — report
      the cause once, cite the effect there.
@@ -107,6 +117,6 @@ invention.
   `../audit-orchestrator/references/finding_fragment.json`. Never assign `F-` ids; the
   orchestrator does. Done means valid: the fragment parses as JSON and matches
   `finding_fragment.json` before handoff (`python3 <orchestrator>/scripts/validate_fragment.py <fragment>` (checks the schema, not just syntax)) — an
-  unvalidated fragment is not a handoff. If INVALID, run `validate_fragment.py --fix <fragment>` first; hand-edit only what it cannot correct. Build the fragment programmatically (`python3` + `json.dump`), never in a shell heredoc — heredoc brace errors surface only as 'unreadable' at validation, costing a full rewrite turn. Every recorded probe row appears in the relevant result's `observations`
+  unvalidated fragment is not a handoff. If INVALID, run `validate_fragment.py --fix <fragment>` first; hand-edit only what it cannot correct. Author the fragment as a JSON draft file (write tool), then run `python3 <orchestrator>/scripts/write_fragment.py --in <draft> --out <final path>` — it validates against finding_fragment.json, applies safe fixes (duplicate results, unknown keys), and prints one line. No per-run builder scripts. Never hand-write the final fragment in place. Every recorded probe row appears in the relevant result's `observations`
   so the report's evidence is reconstructible. This skill carries no `opportunities[]` —
   market-derived demand with no answering page is answer-coverage's channel.

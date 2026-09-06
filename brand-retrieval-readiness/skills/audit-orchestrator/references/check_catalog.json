@@ -1,6 +1,6 @@
 {
-  "catalog_version": "2.1.0",
-  "note": "Canonical check registry . check_id is the join key: fragments -> dedup -> not_evaluated -> lint -> playbook -> category. stage names the pipeline stage the check guards (reach/read/extract/identify/trust/cite/land). pattern_template and evidence_template are the guardrail against incident-shaped findings : the title states the site- or template-level pattern, evidence carries the count with its denominator and quotes, affected_urls carries the instances. Fill placeholders from observations; never ship a title that names one specific visitor, session, or page as the pattern. negative_control is the when-NOT-to-flag a judge reads for. evidence_required values come from finding_fragment.json evidence_quality enum; semantic judgments stay capped at medium confidence unless a deterministic observation corroborates them. affected_surfaces_default uses only citation + live-fetch surfaces from provider_registry.json surface_taxonomy. Playbook prose (options, owners, acceptance-test templates, forbidden claims) lands in Phase 6 against these ids. Prefixes are exactly 3 letters per the schema pattern: ACC/REP/ANS/ENT/FRS/OFF/REF.",
+  "catalog_version": "2.2.0",
+  "note": "Canonical check registry . check_id is the join key: fragments -> dedup -> not_evaluated -> lint -> playbook -> category. stage names the pipeline stage the check guards (reach/read/extract/identify/trust/cite/land). pattern_template and evidence_template are the guardrail against incident-shaped findings : the title states the site- or template-level pattern, evidence carries the count with its denominator and quotes, affected_urls carries the instances. Fill placeholders from observations; never ship a title that names one specific visitor, session, or page as the pattern. negative_control is the when-NOT-to-flag a judge reads for. evidence_required values come from finding_fragment.json evidence_quality enum; semantic judgments stay capped at medium confidence unless a deterministic observation corroborates them. affected_surfaces_default uses only citation + live-fetch surfaces from provider_registry.json surface_taxonomy. Playbook prose (options, owners, acceptance-test templates, forbidden claims) lives in references/remediation_playbook.json against these ids. Prefixes are exactly 3 letters per the schema pattern: ACC/REP/ANS/ENT/FRS/OFF/REF.",
   "checks": [
     {
       "check_id": "ACC-ROBOTS-ROLE",
@@ -130,6 +130,19 @@
       "evidence_template": "{k} locale variants found; {m} lack reciprocal hreflang declarations ({examples}).",
       "severity_band": ["low", "medium"],
       "negative_control": "Single-locale sites - the check is not applicable and lands in not_evaluated.",
+      "affected_surfaces_default": []
+    },
+    {
+      "check_id": "ACC-LINK-ROT",
+      "skill_id": "access-discovery-audit",
+      "category": "access-discovery",
+      "stage": "reach",
+      "pattern_template": "Sampled internal links return errors",
+      "mechanism": "Internal links that 404 or 5xx strand visitors and crawlers on error pages; link equity and citation paths die with them. 410 Gone is correct removal, not rot.",
+      "evidence_required": "direct-measurement",
+      "evidence_template": "{k} of {n} sampled internal links return {statuses} ({examples}); sample probes unfetched same-origin links only.",
+      "severity_band": ["low", "medium"],
+      "negative_control": "410 Gone responses (correct removal); timeouts, which never become findings; external links (a separate concern); a sample with zero errors.",
       "affected_surfaces_default": []
     },
     {
@@ -401,8 +414,8 @@
       "mechanism": "Visible dates, structured dateModified, and sitemap lastmod disagree for the same page, undermining current-version identification.",
       "evidence_required": "direct-measurement",
       "evidence_template": "{k}/{n} pages: visible {visible_date} vs structured {structured_date} vs sitemap lastmod {lastmod}.",
-      "severity_band": ["medium"],
-      "negative_control": "Uniform sitemap lastmod without corroborating evidence of falsity is never auto-flagged; evergreen pages without dates are fine.",
+      "severity_band": ["low", "medium"],
+      "negative_control": "Uniform sitemap lastmod without corroborating evidence of falsity is never auto-flagged; evergreen pages without dates are fine. A stale sitewide copyright year against newer visible content is a visible-date conflict at low when it is the site's only date signal; publishing-lag and extractor-misread differences pass.",
       "affected_surfaces_default": []
     },
     {
@@ -428,7 +441,7 @@
       "evidence_required": "direct-measurement",
       "evidence_template": "{distinct}/{present} distinct lastmod values across {entries} entries; all sampled values are {sample_value}.",
       "severity_band": ["low"],
-      "negative_control": "Varied lastmod values that track content, or a small sitemap where uniformity is plausible; never flag uniformity alone at medium or above.",
+      "negative_control": "Varied lastmod values that track content, or a small sitemap where uniformity is plausible; never flag uniformity alone at medium or above. A sitemap with zero lastmod values is absence, not uniformity - never flagged under this check (report the absence inside FRS-DATE-CONFLICT evidence instead).",
       "affected_surfaces_default": []
     },
     {
@@ -476,7 +489,7 @@
       "category": "offsite-visibility",
       "stage": "cite",
       "pattern_template": "Retrieval surfaces state the brand's {fact_type} incorrectly",
-      "mechanism": "The strongest case in the study: an answer states a fact about the brand that the brand's own page contradicts - misrepresentation the brand never wrote and cannot see.",
+      "mechanism": "The most severe case: an answer states a fact about the brand that the brand's own page contradicts - misrepresentation the brand never wrote and cannot see.",
       "evidence_required": "direct-measurement",
       "evidence_template": "engine={engine} states '{stated_value}' for {fact_type} (query='{query}', timestamp={timestamp}); the official page states '{official_value}' at {official_url}; one run is one observation, auditor egress.",
       "severity_band": ["high"],
@@ -598,19 +611,6 @@
       "evidence_template": "{k} undimensioned media, {m} render-blocking scripts on {n} {page_class} pages (risk observation only; no synthesized CWV).",
       "severity_band": ["low"],
       "negative_control": "No fabricated CLS/LCP/INP numbers, ever; real measurement requires field data (CrUX) or a lab run, which the audit does not perform.",
-      "affected_surfaces_default": []
-    },
-    {
-      "check_id": "ACC-LINK-ROT",
-      "skill_id": "access-discovery-audit",
-      "category": "access-discovery",
-      "stage": "reach",
-      "pattern_template": "Sampled internal links return errors",
-      "mechanism": "Internal links that 404 or 5xx strand visitors and crawlers on error pages; link equity and citation paths die with them. 410 Gone is correct removal, not rot.",
-      "evidence_required": "direct-measurement",
-      "evidence_template": "{k} of {n} sampled internal links return {statuses} ({examples}); sample probes unfetched same-origin links only.",
-      "severity_band": ["low", "medium"],
-      "negative_control": "410 Gone responses (correct removal); timeouts, which never become findings; external links (a separate concern); a sample with zero errors.",
       "affected_surfaces_default": []
     }
   ]

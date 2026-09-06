@@ -2,6 +2,7 @@
 name: freshness-consistency-audit
 description: Judge freshness and version integrity from the snapshot's claim index - cross-page contradictions on prices, plans, versions and hours; date conflicts between visible text, structured dateModified and sitemap lastmod; impossible dates; uniform build-stamp lastmod; and superseded products, versions or deprecated docs that stay linked and indexable without supersession signals. Normally invoked by audit-orchestrator; use alone only when asked specifically about staleness, dates, or versioning concerns.
 license: MIT
+compatibility: Requires Python 3.9+ (standard library only).
 allowed-tools: Bash Read Write
 metadata:
   version: "1.0.0"
@@ -34,10 +35,12 @@ conflicts are the measurable, on-site form of that failure.
   `claim_index_subset` (repeated identical claims arrive capped with `count`); extras carry
   `sitemap` (lastmod present/distinct counts + sample) and `page_dates` (structured dates
   per page + visible date claims). `extras.checks` carries the check templates;
-  `extras.fragment_shape` the fragment keys.
+  `extras.fragment_shape` the fragment keys; `extras.phase1_findings` lists the phase-1
+  findings (pairing without re-reading fragments).
 - Snapshot context relayed by the orchestrator when needed: `sitemap.lastmod_distinct_count`.
 - Runtime contract: judge from the excerpt only, in a single pass, and write the fragment
-  once; emit partial findings with `not_evaluated` rather than overrun.
+  once; emit partial findings with `not_evaluated` rather than overrun. If a read
+  truncates, continue from the truncation offset — do not restart or re-open.
   `extras.fragment_shape` is the complete fragment contract — never open `finding_fragment.json`.
 
 ## Procedure
@@ -53,13 +56,16 @@ conflicts are the measurable, on-site form of that failure.
      transaction or procedure depends on.
    - **FRS-DATE-CONFLICT**: visible dates vs structured `dateModified` vs sitemap `lastmod`
      disagree on the same page beyond plausible publishing lag. Quote the values and their
-     sources.
+     sources. A stale sitewide copyright year against newer visible content is a
+     visible-date conflict at low when it is the site's only date signal — quote both sides.
    - **FRS-IMPOSSIBLE-DATE**: dates in the future relative to audit time, or structurally
      impossible (Feb 30). Verify the extractor did not misparse a version or price first —
      the negative control.
    - **FRS-LASTMOD-UNIFORM**: `lastmod_distinct_count` ≈ 1 across a meaningful sample. This is
      a LOW finding alone — it escalates only when a page's visible content is clearly older
-     than the uniform stamp (corroborating staleness).
+     than the uniform stamp (corroborating staleness). `lastmod_present_count` = 0 is
+     absence, not uniformity: emit `not_evaluated` ("lastmod absent; no uniformity condition
+     applies") — a stale-only-date-signal observation belongs to FRS-DATE-CONFLICT, not here.
    - **FRS-STALE-VERSION**: current pages link into deprecated versions, docs, or product
      pages that carry no supersession signal ("deprecated", "superseded by", redirect). The
      heading_tree gives the section context; quote the linking page and the stale target.
@@ -80,7 +86,8 @@ conflicts are the measurable, on-site form of that failure.
   - FRS-IMPOSSIBLE-DATE: extractor misparses (a version string or price read as a date) —
     verify semantic context before flagging.
   - FRS-LASTMOD-UNIFORM: varied lastmod that tracks content; a small sitemap; uniformity
-    without any corroborating staleness — never above low.
+    without any corroborating staleness — never above low; absent lastmod (0 present) is
+    `not_evaluated`, never flagged as uniform.
   - FRS-STALE-VERSION: clearly labeled historical or archive content; a versioned docs set
     where old versions are intentionally published and marked as non-current.
 - Severity and confidence are separate; follow
@@ -96,5 +103,5 @@ conflicts are the measurable, on-site form of that failure.
   `../audit-orchestrator/references/finding_fragment.json`. Never assign `F-` ids; the
   orchestrator does. Done means valid: the fragment parses as JSON and matches
   `finding_fragment.json` before handoff (`python3 <orchestrator>/scripts/validate_fragment.py <fragment>` (checks the schema, not just syntax)) — an
-  unvalidated fragment is not a handoff. If INVALID, run `validate_fragment.py --fix <fragment>` first; hand-edit only what it cannot correct. Build the fragment programmatically (`python3` + `json.dump`), never in a shell heredoc — heredoc brace errors surface only as 'unreadable' at validation, costing a full rewrite turn. Report which pages supplied each side of every conflict so the
+  unvalidated fragment is not a handoff. If INVALID, run `validate_fragment.py --fix <fragment>` first; hand-edit only what it cannot correct. Author the fragment as a JSON draft file (write tool), then run `python3 <orchestrator>/scripts/write_fragment.py --in <draft> --out <final path>` — it validates against finding_fragment.json, applies safe fixes (duplicate results, unknown keys), and prints one line. No per-run builder scripts. Never hand-write the final fragment in place. Report which pages supplied each side of every conflict so the
   remediation can name the source of truth.

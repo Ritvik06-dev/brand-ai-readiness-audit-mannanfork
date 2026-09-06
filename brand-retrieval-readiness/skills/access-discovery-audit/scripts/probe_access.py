@@ -24,6 +24,7 @@ import json
 import os
 import re
 import sys
+import time
 from urllib.parse import urlparse
 
 CHECK_IDS = [
@@ -957,6 +958,13 @@ def main():
     notes = []
     try:
         snap = load_json(args.snapshot)
+        try:
+            _t0 = datetime.datetime.fromisoformat(
+                snap["audited_at"].replace("Z", "+00:00")).timestamp()
+            print("audit elapsed since snapshot: %ds (budget 300s; timeboxes apply)"
+                  % max(0, int(time.time() - _t0)))
+        except (KeyError, ValueError, AttributeError, OSError):
+            pass
     except (OSError, ValueError) as e:
         # exit 2: could not analyze; still write a fragment with not_evaluated
         fragment = {"skill_id": "access-discovery-audit", "mode": "snapshot",

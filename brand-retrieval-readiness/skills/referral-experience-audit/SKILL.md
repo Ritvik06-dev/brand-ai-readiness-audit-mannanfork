@@ -2,6 +2,7 @@
 name: referral-experience-audit
 description: Judge whether a visitor arriving from an AI citation can confirm the cited fact and continue their task - answer confirmable above the fold with its qualifier, text-fragment landing survivability, answers collapsed by default, overlays and consent walls, soft 404s, dead-end 404 bodies, path-dropping redirects, and static performance risk. Normally invoked by audit-orchestrator; use alone only when asked specifically about landing-page or engagement concerns.
 license: MIT
+compatibility: Requires Python 3.9+ (standard library only). A headless browser is optional and only raises confidence.
 allowed-tools: Bash Read Write
 metadata:
   version: "1.0.0"
@@ -33,25 +34,31 @@ visitor, judged here because they land on the citation).
   `heading_tree` (ids matter), first excerpts, `extras.pages_signals` (overlays, accordions,
   details, dialogs per page), `extras.soft_404` (probe result + body quality), and
   `extras.redirect_path_preservation`. `extras.checks` carries the check templates;
-  `extras.fragment_shape` the fragment keys.
+  `extras.fragment_shape` the fragment keys; `extras.phase1_findings` lists the phase-1
+  findings (pairing with REP-* without re-reading fragments).
 - `audit/passages_checked.json` — written by the `--passages` post-step: per candidate answer
   passage, whether it exists as one contiguous visible text run (`contiguous`) and why not
   (`note`: "price split across spans", "inside collapsed details").
 - Snapshot context relayed when needed: image dimensions and inline render-blocking hints.
 - Runtime contract: judge from the excerpt and `passages_checked` only, in a single pass, and
-  write the fragment once; emit partial findings with `not_evaluated` rather than overrun.
+  write the fragment once; emit partial findings with `not_evaluated` rather than overrun. If
+  a read truncates, continue from the truncation offset — do not restart or re-open.
+  **Timebox:** the fragment must be authored by 300 s elapsed (printed by the scripts); past
+  that, record the deterministic relays and judge continuation failures for at most the first
+  3 questions — the rest `not_evaluated` (`timebox: ...`). A partial fragment beats an overrun.
   `extras.fragment_shape` is the complete fragment contract — never open `finding_fragment.json`.
 
 ## Procedure
 
-1. **Deterministic relays** — the probes already ran in the snapshot; quote the recorded
-   observation, never re-derive it:
-   - **REF-SOFT-404** — `extras.soft_404`: a nonexistent path returned 200. A Google-recognized
-     defect that admits junk URLs to indexes and turns mangled citations into silent dead ends.
-   - **REF-404-DEAD-END** — the 404 body's `body_quality`: no search, no navigation, no
+1. **Deterministic relays** — `extras.relays` carries each as a finding-candidate plus an
+   evidence line, precomputed by the collector; gate them (the pass/finding decision stays
+   with you — e.g. a 404 body with navigation but no search is your call):
+   - **REF-SOFT-404** — a nonexistent path returned 200. A Google-recognized defect that
+     admits junk URLs to indexes and turns mangled citations into silent dead ends.
+   - **REF-404-DEAD-END** — the 404 body's recovery path: no search, no navigation, no
      suggestions.
-   - **REF-PATH-DROP-REDIRECT** — `extras.redirect_path_preservation`: a variant redirect that
-     dropped the path to `/`, losing the answer for every citation of that variant.
+   - **REF-PATH-DROP-REDIRECT** — a variant redirect that dropped the path to `/`, losing
+     the answer for every citation of that variant.
 2. **Text-fragment survivability** — **REF-FRAGMENT-UNSURVIVABLE** from `passages_checked.json`:
    `contiguous: false` rows, with their notes. Judge passages **as answer-coverage wrote them**
    under its quote-granularity rule (≤ ~600 characters, the specific answer sentence(s)); a
@@ -64,17 +71,13 @@ visitor, judged here because they land on the citation).
    and the human's table of contents, and nothing more.
 3. **Continuation judgments** — semantic, medium cap, quoted from the excerpts:
    - **REF-ANSWER-NOT-CONFIRMED** — for each answer-coverage question with an expected page:
-     is the answer confirmable in the first screenful with its qualifier attached? **Explicit
-     proxy (adopted; no improvising per run):** the first screenful is approximated by the
-     first ~600 characters of the page's main-content extraction — an answer appearing within
-     that window confirms; an answer beyond it, or present only after interaction, is the
-     flag case. State the proxy in the evidence and keep confidence at medium; a declared
-     browser capability upgrades to direct observation. The slogan H1 with the fact 900 words
-     down is the flag case, not the pass case. On news- and publisher-style pages a headline
-     (h1/h2) stating the answer with its qualifier counts as confirmation — headlines are
-     the confirmable surface there; name the confirming surface in the evidence. `extras.screen_windows`
-     names the proxy window (offset), headline, and overlay flag per page — judge from it, never
-     re-estimate offsets from raw excerpts.
+     is the answer confirmable in the first screenful with its qualifier attached?
+     `passages_checked.json` carries `first_window` per question (offset vs the ~600-char
+     proxy) — the offset question is answered; the confirmation question is still yours:
+     on news/publisher pages a confirming headline overrides `in_window: false` (name the
+     confirming surface in the evidence); `in_window: true` never clears a collapsed answer
+     (consult `pages_signals`); qualifier attachment is never precomputed. A declared
+     browser capability upgrades to direct observation.
    - **REF-COLLAPSED-ANSWER** — the accordion inversion: content in the DOM but collapsed by
      default is fine for the machine and hostile to the human who arrived for exactly that
      fact (use `pages_signals` accordions/details/dialogs plus the excerpts). The
@@ -118,5 +121,5 @@ visitor, judged here because they land on the citation).
   `../audit-orchestrator/references/finding_fragment.json`. Never assign `F-` ids; the
   orchestrator does. Done means valid: the fragment parses as JSON and matches
   `finding_fragment.json` before handoff (`python3 <orchestrator>/scripts/validate_fragment.py <fragment>` (checks the schema, not just syntax)) — an
-  unvalidated fragment is not a handoff. If INVALID, run `validate_fragment.py --fix <fragment>` first; hand-edit only what it cannot correct. Build the fragment programmatically (`python3` + `json.dump`), never in a shell heredoc — heredoc brace errors surface only as 'unreadable' at validation, costing a full rewrite turn. In your summary, name which family each finding belongs to so the report
+  unvalidated fragment is not a handoff. If INVALID, run `validate_fragment.py --fix <fragment>` first; hand-edit only what it cannot correct. Author the fragment as a JSON draft file (write tool), then run `python3 <orchestrator>/scripts/write_fragment.py --in <draft> --out <final path>` — it validates against finding_fragment.json, applies safe fixes (duplicate results, unknown keys), and prints one line. No per-run builder scripts. Never hand-write the final fragment in place. In your summary, name which family each finding belongs to so the report
   can order continuation failures before generic friction.

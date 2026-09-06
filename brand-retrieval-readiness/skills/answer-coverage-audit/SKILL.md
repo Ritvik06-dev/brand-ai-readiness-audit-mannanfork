@@ -2,6 +2,7 @@
 name: answer-coverage-audit
 description: Judge whether the questions a category's customers actually ask are answered by complete, extractable passages on the site — using a two-source prompt set (site-derived and market-derived questions), checking for unanswered category-standard questions, answers missing subject/units/timeframe, qualifiers detached from their claims, comparison data trapped in unlabelled grids, and boilerplate swamping the answer. Normally invoked by audit-orchestrator; use alone only when asked specifically about answer-coverage or content-extractability concerns.
 license: MIT
+compatibility: Requires Python 3.9+ (standard library only).
 allowed-tools: Bash Read Write
 metadata:
   version: "1.0.0"
@@ -34,21 +35,39 @@ gap between them is where the findings and the opportunities live.
 - Prepared excerpt file `audit/excerpts/answer-coverage-audit.json` (one read): pages with
   `url`, `page_class`, `title`, `heading_tree`, `main_content_excerpts` (≤1,500 chars per
   location with `char_offset`), and `claim_index_subset`. `extras.checks` carries the check
-  templates; `extras.fragment_shape` the fragment keys.
+  templates; `extras.fragment_shape` the fragment keys. `extras.boilerplate` carries the
+  measured preamble/offset stats from the phase-1 script; `extras.phase1_findings` lists
+  the phase-1 findings (pairing without re-reading fragments); `extras.suggested_slots`
+  suggests archetype/page pairs (you still phrase and judge every question);
+  `extras.authoring_rules` and `extras.severity_facts` are the composed-run contract.
 - The snapshot's `site_type` (recorded in the snapshot; the orchestrator relays it).
 - Archetype applicability: `references/question_archetypes.md`.
 - Runtime contract: judge from the excerpt only, in a single pass, and write the fragment
-  once; emit partial findings with `not_evaluated` rather than overrun.
+  once; emit partial findings with `not_evaluated` rather than overrun. If a read
+  truncates, continue from the truncation offset — do not restart or re-open.
+  **Set-freeze:** once `audit/passages.json` is written, the question set is frozen — the
+  gates read it and never rebuild or re-enumerate it.
+  **Timebox:** check the script-printed elapsed before authoring; past 150 s, map and judge
+  the core-archetype questions only and emit the rest `not_evaluated` (`timebox: ...`) —
+  a partial fragment beats an overrun.
   `extras.fragment_shape` is the complete fragment contract — never open `finding_fragment.json`.
 
 ## Procedure
 
-1. **Generate the question set** per `references/question_archetypes.md`: 5–8 questions
+1. **Generate the question set** per `references/question_archetypes.md`: 4–6 questions
    weighted toward the site type's core archetypes, at least two market-derived. Record each
    question's `source` and `intent`. `extras.coverage_appendix` (heading inventory, nav labels,
    claim-topic counts) aids coverage — apply the archetypes without restating the table; model
    still authors every question; never emit appendix rows
-   as questions.
+   as questions. Defaults: identity always; transaction and trust on unless the appendix shows
+   neither fees nor credentials anywhere; local only when the site type calls for it;
+   comparison only when the excerpt shows a competing-option surface (tier grids, a
+   vs-page, a plan grid) — never invent a competitor.
+   Prefer questions whose expected page is in the sample: an unmapped question can only end
+   in `not_evaluated` or an opportunity, never a finding. If the excerpt carries no sampled
+   pages (no capture), emit every ANS check as `not_evaluated` ("no capture") — generate no
+   questions from site-type imagination. Curation budget: one sentence per question
+   decision; a deliberation longer than the question set itself is the failure mode.
 2. **Map and judge.** For each question find the expected page and its best candidate passage
    (verbatim, ≤2,000 chars). Judge completeness: subject explicit, claim with units/timeframe,
    qualifier attached (the `qualifier_present` field). Judge extractability: heading path gives
@@ -56,30 +75,40 @@ gap between them is where the findings and the opportunities live.
    **Quote granularity rule:** `candidate_passage` is the specific answer sentence(s) — one
    paragraph, at most ~600 characters, never a multi-section dump; if the answer genuinely
    needs more than ~600 characters, redraw tighter or leave the question to `opportunities`.
-   Copy it as an exact substring of the excerpt — character for character, including dashes,
-   quotes and punctuation; never join lines, paraphrase, or retype from memory. A retyped
-   passage is a quoting defect, and the contiguity checker measures the site, not your quote.
-   The checker matches within single blocks or two adjacent blocks — assert substrings against
-   that granularity, not page text. Before writing, assert each `candidate_passage` is an exact
-   substring of the excerpt.
-3. **Write `audit/passages.json`** (excerpts_schema `passages_file`): shape literal
-   `{"kind": "passages", "skill_id": "answer-coverage-audit", "questions": [...]}` — the
-   array key is `questions`, never `passages`. Every question with its
-   `expected_page`, verbatim `candidate_passage`, `qualifier_present`, `source_location`. For
-   unanswered questions write the best near-miss passage you can find, or keep the entry with
-   the `candidate_passage` key omitted — the orchestrator's `--passages` post-step records
+   You do NOT copy passages by hand: quote a short verbatim **anchor** (≤~20 words, exactly
+   as the excerpt renders it, dashes and punctuation included) into the draft, and let
+   `build_passages.py` expand it to the sentence-bounded passage (see step 3). If the
+   builder reports a failure (anchor not found, ambiguous across locations, excerpt clip
+   boundary), re-anchor that question only — the failure is a quoting-fidelity signal,
+   not a site defect.
+3. **Build `audit/passages.json`** via `build_passages.py` (see Output): your draft carries
+   `question_id`, `question`, `source`, `intent`, `expected_page`, a short verbatim
+   `anchor` (≤~20 words from the excerpt), and `qualifier_present`. The script expands
+   anchors to the exact ≤600-char passages, verifies page-block contiguity, and writes the
+   final shape (`kind`/`skill_id`/`questions`; candidate omitted for unanswered questions —
+   keep the entry, never a near-miss guess). The `--passages` post-step records
    those as no-candidate and tolerates missing pages.
 4. **Gate the checks** and write the fragment to the orchestrator's `audit/findings/` path:
    - **ANS-QUESTION-UNANSWERED** — a *core* archetype question with no official answering
      passage. Site-derived gap: finding (the site claims the territory and does not cover it).
      Market-derived gap: `opportunities[]` entry (unmet demand — the site never claimed it),
      never a finding.
-   - **Sampling gap:** when the expected page was never sampled, or the question cannot be
-     answered from sampled pages at all, that is a sampling limitation — `not_evaluated`
-     with the reason (`sampling limitation: ...`), never a finding and never an opportunity.
-     Only a sampled page's silence is a gap. Corroboration damping (severity_model.md) may
-     lower a site-derived absence finding one step when external corroboration is strong —
-     state the cited-despite sentence in `why_it_matters`.
+   - **Sampling gap** — `not_evaluated` with the reason (`sampling limitation: ...`), never
+     a finding and never an opportunity, in exactly two cases: (1) the expected page was
+     never sampled; (2) a market-derived question no sampled page answers while the
+     excerpt's `coverage_appendix` (headings, nav labels) still shows a page that would
+     carry the answer. Decide between the two cases in one sentence; do not re-litigate.
+   - **Sampled-page silence is evidence, not a sampling gap.** The question's source does
+     not decide this — the page's claim does. If a sampled page's section-level headings in
+     main content (h2/h3 naming the question's subject — a `PROGRAM FEES` heading counts;
+     nav, carousel, or announcement headings do not) claim the territory and carry no
+     answering passage → finding (ANS-QUESTION-UNANSWERED). A market-derived question no
+     sampled page claims anywhere → `opportunities[]`. If the missing section is plausibly
+     collapsed-by-default DOM content, that is REF-COLLAPSED-ANSWER / representation's case
+     — name the paired check, do not double-report. If the answer plausibly lives on an
+     unsampled page, say so in the evidence sentence — it scopes the finding, it does not
+     erase it. Corroboration damping may lower the finding one step when external
+     corroboration is strong — state the cited-despite sentence in `why_it_matters`.
    - **ANS-PASSAGE-INCOMPLETE** — the passage exists but omits subject, units, or timeframe;
      extracted alone it under-informs.
    - **ANS-QUALIFIER-DETACHED** — the claim is stated without the qualifier that scopes it
@@ -91,7 +120,8 @@ gap between them is where the findings and the opportunities live.
    - **ANS-BOILERPLATE-DROWNING** — repeated boilerplate precedes or swamps main content in
      extraction. The gate is quantified and aligned with REP-EXTRACTION-LOSS's displacement
      bar: a shared preamble on at least half the sampled pages **AND** median unique-content
-     offset **above 1,500 characters**. Below that (e.g. a 130–300 character docs-index nav
+     offset **above 1,500 characters** — gate from `extras.boilerplate`'s measured numbers,
+     never re-measure offsets by hand. Below that (e.g. a 130–300 character docs-index nav
      with content starting at ~300) it is orientation — pass, with the measured numbers
      recorded as the non-evidence. A broken sentence inside the preamble is a separate
      ANS-PASSAGE-INCOMPLETE fact, not this check.
@@ -128,5 +158,5 @@ gap between them is where the findings and the opportunities live.
   (excerpts_schema `passages_file` shape; fragment per
   `../audit-orchestrator/references/finding_fragment.json`, including its `opportunities[]`).
 - Never assign `F-` ids; the orchestrator does. Done means valid: the fragment parses as
-  JSON and matches `finding_fragment.json` before handoff (`python3 <orchestrator>/scripts/validate_fragment.py <fragment>` (checks the schema, not just syntax)) — an unvalidated fragment is not a handoff. If INVALID, run `validate_fragment.py --fix <fragment>` first; hand-edit only what it cannot correct. Build the fragment programmatically (`python3` + `json.dump`), never in a shell heredoc — heredoc brace errors surface only as 'unreadable' at validation, costing a full rewrite turn. State in your summary which questions were
+  JSON and matches `finding_fragment.json` before handoff (`python3 <orchestrator>/scripts/validate_fragment.py <fragment>` (checks the schema, not just syntax)) — an unvalidated fragment is not a handoff. If INVALID, run `validate_fragment.py --fix <fragment>` first; hand-edit only what it cannot correct. Do not write a builder script and do not hand-copy passages: write the draft with short anchors per question, run `python3 <orchestrator>/scripts/build_passages.py --draft <draft> --excerpt audit/excerpts/answer-coverage-audit.json --snapshot audit/snapshot.json --out audit/passages.json`, and fix only the FAIL lines it prints (re-anchor). It extracts the exact passages, verifies page-block contiguity, and writes `passages.json`; the fragment you author by hand carries only the judgment fields. State in your summary which questions were
   market-derived so the offsite probe set inherits the right phrasing.
