@@ -1,7 +1,7 @@
 # Severity & Confidence Model
 
 Severity and confidence answer different questions and are **separate dimensions — never
-multiplied** (overrules `grok.txt`; FINAL_APPROACH §8).
+multiplied**.
 
 - **Severity:** *If true*, how much does this affect important discovery, correctness, or task
   completion?
@@ -56,14 +56,14 @@ lists in the remediation; never fetch them at runtime).
    robots.txt is a real crawl-delay condition: **two or more consecutive 5xx across the audit →
    `high` severity / `high` confidence**; a single occurrence → `needs_verification`, never a
    finding. The collector records every attempt; the access gate reads the count.
-8. Off-site probe findings are capped at **medium confidence** unless a deterministic on-site
-   observation corroborates them; a probe counts as run only when engine, query, timestamp, and
-   result are all recorded — no record means `not_evaluated`, never an inferred result. A sample
-   of prompts is never a visibility score.
 7. Root causes over symptoms: correlated observations that share one mechanism (e.g., empty
    shell + raw pricing absent + nav-only extraction = **one** finding) are merged by the
    orchestrator; downstream effects become `affected_urls`/`affected_surfaces`, not separate
    findings.
+8. Off-site probe findings are capped at **medium confidence** unless a deterministic on-site
+   observation corroborates them; a probe counts as run only when engine, query, timestamp, and
+   result are all recorded — no record means `not_evaluated`, never an inferred result. A sample
+   of prompts is never a visibility score.
 
 ### Corroboration damping (soft)
 
@@ -86,7 +86,7 @@ owned-only, unresolved, or brand-unmatched never damps.
   **`acceptance_test`** — a concrete, reproducible check that proves the fix resolved the
   mechanism;
 - actions must never claim guaranteed rankings, citations, or specific AI-surface outcomes;
-  see `remediation_playbook.json` forbidden-claims list (Phase 5+).
+  the forbidden-claims list lives in `remediation_playbook.json`.
 
 ## Arithmetic invariants (enforced by `build_report.py`)
 

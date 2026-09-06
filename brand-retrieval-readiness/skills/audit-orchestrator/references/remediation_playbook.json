@@ -1,0 +1,103 @@
+{
+  "playbook_version": "1.0.0",
+  "note": "Remediation prose keyed by pipeline stage. Specialists write site-specific acceptance tests today; merge-time auto-fill from acceptance_test_templates is future wiring, not current behavior.",
+  "forbidden_claims": [
+    "Guaranteed rankings, citations, or specific AI-surface outcomes for any fix.",
+    "llms.txt as a discoverability, ranking, or citation factor.",
+    "FAQPage or HowTo schema as a fix (both retired for rich results; plain-HTML Q&A is the fix).",
+    "Mandatory @graph, required Wikidata/Wikipedia presence, or any specific knowledge-base entry as a defect.",
+    "Estimated or synthesized Core Web Vitals (CLS/LCP/INP numbers without field or lab measurement).",
+    "IndexNow submission as a guarantee of indexing or citation.",
+    "Word-count or BLUF-shape laws (fixed lengths, mandatory summaries) as requirements.",
+    "Training-crawler opt-out presented as a visibility fix (it governs training data, not citation).",
+    "Blended readiness scores or visibility percentages from prompt samples."
+  ],
+  "effort_defaults": {"small": "single page or template edit, no design change",
+    "medium": "template or multi-page change, needs owner review",
+    "large": "structural change (rendering, IA, platform) with rollout risk"},
+  "owner_defaults": {"web-platform": "markup, headers, robots, sitemaps, performance",
+    "content": "copy, passages, metadata, structured data values",
+    "marketing": "positioning, claims, third-party listings"},
+  "stages": {
+    "reach": {
+      "fix_families": [
+        "Allowlist retrieval-bot user agents on public paths; keep training opt-outs as explicit policy, never as accidental blocks.",
+        "Remove noindex/nosnippet/max-snippet from decision pages; scope noarchive/nocache deliberately per surface.",
+        "Canonicalize to one origin (scheme/host/slash); fix redirect chains that drop deep paths.",
+        "Replace bot-challenge walls on public content with behavioral enforcement; verify via provider IP lists.",
+        "Link sitemap-declared decision URLs from hub pages and navigation."
+      ],
+      "acceptance_test_templates": [
+        "Fetch the page as {bot_ua}: HTTP 200 with the decision fact in the first response.",
+        "Re-crawl: every sampled canonical equals its final fetch URL after normalization."
+      ]
+    },
+    "read": {
+      "fix_families": [
+        "Server-render decision facts into visible raw text; state carried only in inline payloads is partially readable at best.",
+        "Give text-bearing images real alt text; replace canvas/SVG-only figures and video-without-transcript with readable equivalents.",
+        "Use semantic tables for comparison content; keep answer passages inside single text elements.",
+        "Mirror metadata facts (prices, versions, plan names) in visible body copy."
+      ],
+      "acceptance_test_templates": [
+        "With scripts disabled, the decision fact is present in view-source visible text.",
+        "The answer passage re-runs contiguous through the passages checker."
+      ]
+    },
+    "extract": {
+      "fix_families": [
+        "Answer category-standard questions in self-contained passages: explicit subject, claim with units/timeframe, qualifier attached.",
+        "Keep qualifiers (tier, region, exception) in the same passage as the claim, not on another page.",
+        "Label comparison grids so plan-value pairing survives extraction; keep boilerplate out of the extraction lead."
+      ],
+      "acceptance_test_templates": [
+        "The passage answers the question standalone when quoted without its page.",
+        "The qualifier appears within the same passage as the claim it scopes."
+      ]
+    },
+    "identify": {
+      "fix_families": [
+        "Repair JSON-LD so every block parses and carries its type-required properties; never mark up invisible content.",
+        "Align the organization name across title, OG, H1, schema, and footer legal name; qualify ambiguous names with category, location, or legal form.",
+        "Resolve structured-vs-visible conflicts in favor of one stated fact; earn independent corroboration (listings, press, registries), never owned-social-only."
+      ],
+      "acceptance_test_templates": [
+        "A validator parses every JSON-LD block with zero errors and matching visible values.",
+        "The brand name plus one qualifier appears identically in title, H1, and Organization schema."
+      ]
+    },
+    "trust": {
+      "fix_families": [
+        "Reconcile cross-page contradictions (price, plan, version, hours) to one stated value with on-page scoping for genuine variants.",
+        "Align visible dates, structured dateModified, and sitemap lastmod; retire or supersede stale versions with explicit signals.",
+        "Emit honest lastmod (content-driven, never uniform build stamps)."
+      ],
+      "acceptance_test_templates": [
+        "The same fact quoted from any two sampled pages agrees, or the variant scoping is stated on-page.",
+        "No sampled page shows a date older than its newest visible content date."
+      ]
+    },
+    "cite": {
+      "fix_families": [
+        "Publish the extractable passages competitors are cited for; unmet demand is content strategy, not a defect patch.",
+        "Correct misrepresented facts at the official source competitors quote; corroborate across independent surfaces.",
+        "Disambiguate shared names where probes resolve the wrong entity."
+      ],
+      "acceptance_test_templates": [
+        "A repeat probe of the same question cites the official page with the corrected fact.",
+        "The official page states the fact the third party was cited for, verbatim quotable."
+      ]
+    },
+    "land": {
+      "fix_families": [
+        "Confirm the cited fact above the fold with its qualifier; headlines count on news-style pages.",
+        "Keep answer passages in single text runs so text-fragment landings highlight; expand collapsed answers on arrival paths.",
+        "Remove blocking overlays from citation landings; fix soft-404s to real 404s with search and navigation; preserve paths across variant redirects."
+      ],
+      "acceptance_test_templates": [
+        "The confirming sentence sits within the first screenful with its qualifier attached.",
+        "A nonexistent path returns 404/410 with search and navigation, never a 200."
+      ]
+    }
+  }
+}
