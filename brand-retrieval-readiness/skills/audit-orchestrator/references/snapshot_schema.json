@@ -4,83 +4,275 @@
   "title": "Shared evidence snapshot",
   "description": "Built once by audit-orchestrator/scripts/collect_snapshot.py; read by every specialist. SIZE DISCIPLINE: this file lives on disk and is NEVER loaded into model context - scripts read it and print small JSON to stdout (--out discipline). Excerpts for judgment skills are separate bounded files (<=1,500 chars per candidate answer location) recorded in excerpts_manifest.",
   "type": "object",
-  "required": ["snapshot_version", "requested_url", "audited_at", "capabilities", "robots", "discovery", "pages", "probes"],
+  "required": [
+    "snapshot_version",
+    "requested_url",
+    "audited_at",
+    "capabilities",
+    "robots",
+    "discovery",
+    "pages",
+    "probes"
+  ],
   "additionalProperties": false,
   "properties": {
-    "snapshot_version": { "const": 1 },
-    "requested_url": { "type": "string" },
-    "audited_at": { "type": "string", "format": "date-time" },
+    "snapshot_version": {
+      "const": 1
+    },
+    "requested_url": {
+      "type": "string"
+    },
+    "audited_at": {
+      "type": "string",
+      "format": "date-time"
+    },
     "site_type": {
       "type": "array",
-      "items": { "enum": ["saas", "ecommerce", "local-business", "docs-developer", "publisher", "gov-edu", "marketplace-platform", "org-portfolio"] },
+      "items": {
+        "enum": [
+          "saas",
+          "ecommerce",
+          "local-business",
+          "docs-developer",
+          "publisher",
+          "gov-edu",
+          "marketplace-platform",
+          "org-portfolio"
+        ]
+      },
       "description": "The agent's conservative classification (multiple allowed), recorded via --site-type. Drives page sampling, question archetypes, in-scope claim types, and which checks apply. The Generalization rubric line.",
       "maxItems": 3
     },
-    "network_deadline_seconds": { "type": "integer", "description": "runtime budget; per-request 8s, concurrency <=3, one retry on safe GETs" },
+    "network_deadline_seconds": {
+      "type": "integer",
+      "description": "runtime budget; per-request 8s, concurrency <=3, one retry on safe GETs"
+    },
     "capabilities": {
       "type": "object",
       "description": "Declared by the agent via --capabilities (web_fetch,web_search,browser,subagents); scripts take declared facts as flags and never probe for tools.",
-      "required": ["web_fetch", "web_search", "browser", "subagents"],
+      "required": [
+        "web_fetch",
+        "web_search",
+        "browser",
+        "subagents"
+      ],
       "additionalProperties": false,
       "properties": {
-        "web_fetch": { "type": "boolean" },
-        "web_search": { "type": "boolean", "description": "gates offsite-visibility live probes" },
-        "browser": { "type": "boolean", "description": "a representation tool, not an experience simulator; never installed by default" },
-        "subagents": { "type": "boolean", "description": "whether parallel specialist dispatch was used parallel-dispatch flag" },
-        "notes": { "type": "array", "items": { "type": "string" } }
+        "web_fetch": {
+          "type": "boolean"
+        },
+        "web_search": {
+          "type": "boolean",
+          "description": "gates offsite-visibility live probes"
+        },
+        "browser": {
+          "type": "boolean",
+          "description": "a representation tool, not an experience simulator; never installed by default"
+        },
+        "subagents": {
+          "type": "boolean",
+          "description": "whether parallel specialist dispatch was used parallel-dispatch flag"
+        },
+        "notes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
       }
     },
     "robots": {
       "type": "object",
-      "required": ["status"],
+      "required": [
+        "status"
+      ],
       "additionalProperties": false,
       "properties": {
-        "status": { "enum": ["present", "not_found", "error"], "description": "404 = no crawl restrictions (NOT a defect); 5xx = error, a real crawl-delay condition" },
-        "attempts": { "type": ["integer", "null"], "description": "requests made for robots.txt (2 = one retry after a 5xx); gates the two-consecutive-5xx rule" },
-        "http_status": { "type": ["integer", "null"] },
+        "status": {
+          "enum": [
+            "present",
+            "not_found",
+            "error"
+          ],
+          "description": "404 = no crawl restrictions (NOT a defect); 5xx = error, a real crawl-delay condition"
+        },
+        "attempts": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "requests made for robots.txt (2 = one retry after a 5xx); gates the two-consecutive-5xx rule"
+        },
+        "http_status": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "groups": {
           "type": "array",
           "description": "Parsed per-token rules for registry tokens only. role comes from provider_registry.json crawler_roles.",
           "items": {
             "type": "object",
-            "required": ["token", "role"],
+            "required": [
+              "token",
+              "role"
+            ],
             "additionalProperties": false,
             "properties": {
-              "token": { "type": "string" },
-              "role": { "type": "string" },
-              "disallowed_paths": { "type": "array", "items": { "type": "string" } },
-              "allow_paths": { "type": "array", "items": { "type": "string" } },
-              "catch_all_disallow": { "type": ["boolean", "null"], "description": "for User-agent: * group" }
+              "token": {
+                "type": "string"
+              },
+              "role": {
+                "type": "string"
+              },
+              "disallowed_paths": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "allow_paths": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "catch_all_disallow": {
+                "type": [
+                  "boolean",
+                  "null"
+                ],
+                "description": "for User-agent: * group"
+              }
             }
           }
         },
-        "sitemaps_declared": { "type": "array", "items": { "type": "string" } },
-        "content_type": { "type": ["string", "null"] }
+        "sitemaps_declared": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "content_type": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
       }
     },
     "discovery": {
       "type": "object",
-      "required": ["selected"],
+      "required": [
+        "selected"
+      ],
       "additionalProperties": false,
       "properties": {
-        "method": { "type": "string", "description": "sitemap + crawlable links, template-clustered; missing sitemap alone is not a defect" },
-        "sitemap_urls_count": { "type": ["integer", "null"] },
-        "candidates_count": { "type": "integer" },
-        "selected": { "type": "array", "items": { "type": "string" }, "maxItems": 8, "description": "stratified 6-8: homepage, product/service, decision page, docs/FAQ, recent update, older/versioned, contact/about, one locale alternate" },
-        "clusters": { "type": "array", "items": { "type": "object", "required": ["pattern", "count"], "additionalProperties": false, "properties": { "pattern": { "type": "string" }, "count": { "type": "integer" } } }, "description": "path-pattern cluster -> count, so 100 near-identical product URLs don't consume the budget" }
+        "method": {
+          "type": "string",
+          "description": "sitemap + crawlable links, template-clustered; missing sitemap alone is not a defect"
+        },
+        "sitemap_urls_count": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "candidates_count": {
+          "type": "integer"
+        },
+        "selected": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 8,
+          "description": "stratified 6-8: homepage, product/service, decision page, docs/FAQ, recent update, older/versioned, contact/about, one locale alternate"
+        },
+        "clusters": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "pattern",
+              "count"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "pattern": {
+                "type": "string"
+              },
+              "count": {
+                "type": "integer"
+              }
+            }
+          },
+          "description": "path-pattern cluster -> count, so 100 near-identical product URLs don't consume the budget"
+        }
       }
     },
     "sitemap": {
-      "type": ["object", "null"],
+      "type": [
+        "object",
+        "null"
+      ],
       "additionalProperties": false,
       "properties": {
-        "url": { "type": "string" },
-        "http_status": { "type": ["integer", "null"] },
-        "parse_ok": { "type": ["boolean", "null"] },
-        "entries_count": { "type": ["integer", "null"] },
-        "lastmod_present_count": { "type": ["integer", "null"] },
-        "lastmod_distinct_count": { "type": ["integer", "null"], "description": "uniform build-stamp lastmod shows as 1" },
-        "lastmod_sample": { "type": "array", "maxItems": 50, "items": { "type": "object", "required": ["url", "lastmod"], "additionalProperties": false, "properties": { "url": { "type": "string" }, "lastmod": { "type": "string" } } } }
+        "url": {
+          "type": "string"
+        },
+        "http_status": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "parse_ok": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "entries_count": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "lastmod_present_count": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "lastmod_distinct_count": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "uniform build-stamp lastmod shows as 1"
+        },
+        "lastmod_sample": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "type": "object",
+            "required": [
+              "url",
+              "lastmod"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "url": {
+                "type": "string"
+              },
+              "lastmod": {
+                "type": "string"
+              }
+            }
+          }
+        }
       }
     },
     "external_presence": {
@@ -89,15 +281,47 @@
       "description": "declared sameAs / footer links resolved by the collector - the only network I/O outside discovery ; timeouts never become findings",
       "items": {
         "type": "object",
-        "required": ["url", "declared_in"],
+        "required": [
+          "url",
+          "declared_in"
+        ],
         "additionalProperties": false,
         "properties": {
-          "url": { "type": "string" },
-          "declared_in": { "type": "string", "description": "e.g. 'jsonld sameAs (/about)', 'footer'" },
-          "http_status": { "type": ["integer", "null"] },
-          "owned_vs_independent": { "enum": ["owned", "independent", "unknown"], "description": "collector heuristic; the entity skill's model judgment refines it" },
-          "brand_name_match": { "type": ["boolean", "null"], "description": "brand name observed in the destination's title, when fetched" },
-          "heuristic": { "type": ["string", "null"], "description": "why the classifier chose this value" }
+          "url": {
+            "type": "string"
+          },
+          "declared_in": {
+            "type": "string",
+            "description": "e.g. 'jsonld sameAs (/about)', 'footer'"
+          },
+          "http_status": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "owned_vs_independent": {
+            "enum": [
+              "owned",
+              "independent",
+              "unknown"
+            ],
+            "description": "collector heuristic; the entity skill's model judgment refines it"
+          },
+          "brand_name_match": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "brand name observed in the destination's title, when fetched"
+          },
+          "heuristic": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "why the classifier chose this value"
+          }
         }
       }
     },
@@ -106,70 +330,369 @@
       "maxItems": 8,
       "items": {
         "type": "object",
-        "required": ["requested_url", "final_url", "status"],
+        "required": [
+          "requested_url",
+          "final_url",
+          "status"
+        ],
         "additionalProperties": false,
         "properties": {
-          "requested_url": { "type": "string" },
-          "final_url": { "type": "string" },
-          "status": { "type": "integer" },
-          "redirect_chain": { "type": "array", "items": { "type": "string" } },
-          "content_type": { "type": ["string", "null"] },
-          "bytes": { "type": ["integer", "null"] },
-          "timing_ms": { "type": ["integer", "null"] },
-          "raw_html": { "type": "string", "description": "may be large; for scripts only, never for context" },
-          "visible_text": { "type": "string", "description": "raw-response visible text extraction" },
-          "title": { "type": ["string", "null"] },
-          "meta_description": { "type": ["string", "null"] },
-          "canonical": { "type": ["string", "null"] },
-          "lang": { "type": ["string", "null"] },
-          "hreflang": { "type": "array", "items": { "type": "object", "required": ["lang", "href"], "additionalProperties": false, "properties": { "lang": { "type": "string" }, "href": { "type": "string" } } } },
-          "robots_meta": { "type": ["string", "null"] },
-          "x_robots_tag": { "type": ["string", "null"] },
+          "requested_url": {
+            "type": "string"
+          },
+          "final_url": {
+            "type": "string"
+          },
+          "status": {
+            "type": "integer"
+          },
+          "redirect_chain": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "content_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "bytes": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "timing_ms": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "raw_html": {
+            "type": "string",
+            "description": "may be large; for scripts only, never for context"
+          },
+          "visible_text": {
+            "type": "string",
+            "description": "raw-response visible text extraction"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "meta_description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "canonical": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lang": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "hreflang": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "lang",
+                "href"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "lang": {
+                  "type": "string"
+                },
+                "href": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "robots_meta": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "x_robots_tag": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "headers": {
             "type": "object",
             "description": "allow-listed response headers ",
             "additionalProperties": false,
             "properties": {
-              "server": { "type": ["string", "null"] },
-              "cf_ray": { "type": ["string", "null"] },
-              "cf_mitigated": { "type": ["string", "null"] },
-              "last_modified": { "type": ["string", "null"] },
-              "cache_control": { "type": ["string", "null"] },
-              "content_language": { "type": ["string", "null"] },
-              "link": { "type": ["string", "null"] }
+              "server": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "cf_ray": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "cf_mitigated": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "last_modified": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "cache_control": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "content_language": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "link": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
             }
           },
-          "sitemap_lastmod": { "type": ["string", "null"], "description": "lastmod for this URL from the sitemap, when the URL appears there" },
-          "page_class": { "type": ["string", "null"], "description": "template class assigned at sampling: homepage, decision, docs, recent, about, product, trust, other" },
-          "headings": { "type": "array", "items": { "type": "object", "required": ["level", "text"], "additionalProperties": false, "properties": { "level": { "type": "integer" }, "text": { "type": "string" }, "id": { "type": ["string", "null"] } } } },
-          "links": { "type": "array", "items": { "type": "object", "required": ["href"], "additionalProperties": false, "properties": { "href": { "type": "string" }, "anchor_text": { "type": ["string", "null"] }, "rel": { "type": ["string", "null"] } } } },
+          "sitemap_lastmod": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "lastmod for this URL from the sitemap, when the URL appears there"
+          },
+          "page_class": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "template class assigned at sampling: homepage, decision, docs, recent, about, product, trust, other"
+          },
+          "headings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "level",
+                "text"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "level": {
+                  "type": "integer"
+                },
+                "text": {
+                  "type": "string"
+                },
+                "id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            }
+          },
+          "links": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "href"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "href": {
+                  "type": "string"
+                },
+                "anchor_text": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "rel": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            }
+          },
           "jsonld": {
             "type": "array",
             "description": "each script block: raw string + parse outcome; validity checked by check_entities.py",
             "items": {
               "type": "object",
-              "required": ["raw", "parse_ok"],
+              "required": [
+                "raw",
+                "parse_ok"
+              ],
               "additionalProperties": false,
               "properties": {
-                "raw": { "type": "string" },
-                "parse_ok": { "type": "boolean" },
-                "parsed": { "description": "parsed object when parse_ok" }
+                "raw": {
+                  "type": "string"
+                },
+                "parse_ok": {
+                  "type": "boolean"
+                },
+                "parsed": {
+                  "description": "parsed object when parse_ok"
+                }
               }
             }
           },
-          "microdata_types": { "type": "array", "items": { "type": "string" } },
-          "open_graph": { "type": "object", "additionalProperties": { "type": "string" } },
-          "images": { "type": "array", "items": { "type": "object", "required": ["src"], "additionalProperties": false, "properties": { "src": { "type": "string" }, "alt": { "type": ["string", "null"] }, "alt_empty": { "type": "boolean" }, "width": { "type": ["string", "null"], "description": "width attribute as written; feeds text-bearing and perf-risk judgments" }, "height": { "type": ["string", "null"] } } } },
-          "tables": { "type": "object", "additionalProperties": false, "properties": { "semantic_count": { "type": "integer" }, "div_grid_candidates": { "type": "integer", "description": "grids with >=3 aligned columns and no <table> (representation skill)" } } },
-          "interactive": { "type": "object", "additionalProperties": false, "properties": { "accordions": { "type": "integer" }, "dialogs": { "type": "integer" }, "details_elements": { "type": "integer" }, "overlay_in_raw_html": { "type": ["boolean", "null"], "description": "consent/paywall/login overlay present in the INITIAL HTML - observed, not guessed" } } },
-          "non_text": { "type": "object", "additionalProperties": false, "properties": { "canvas": { "type": "integer" }, "svg_without_text": { "type": "integer" }, "video_without_transcript": { "type": "integer" } } },
+          "microdata_types": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "open_graph": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "images": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "src"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "src": {
+                  "type": "string"
+                },
+                "alt": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "alt_empty": {
+                  "type": "boolean"
+                },
+                "width": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "width attribute as written; feeds text-bearing and perf-risk judgments"
+                },
+                "height": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            }
+          },
+          "tables": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "semantic_count": {
+                "type": "integer"
+              },
+              "div_grid_candidates": {
+                "type": "integer",
+                "description": "grids with >=3 aligned columns and no <table> (representation skill)"
+              }
+            }
+          },
+          "interactive": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "accordions": {
+                "type": "integer"
+              },
+              "dialogs": {
+                "type": "integer"
+              },
+              "details_elements": {
+                "type": "integer"
+              },
+              "overlay_in_raw_html": {
+                "type": [
+                  "boolean",
+                  "null"
+                ],
+                "description": "consent/paywall/login overlay present in the INITIAL HTML - observed, not guessed"
+              },
+              "details_open": {
+                "type": "integer",
+                "description": "<details open> count; details_elements minus this is the collapsed-by-default number REF-COLLAPSED-ANSWER gates on"
+              }
+            }
+          },
+          "non_text": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "canvas": {
+                "type": "integer"
+              },
+              "svg_without_text": {
+                "type": "integer"
+              },
+              "video_without_transcript": {
+                "type": "integer"
+              }
+            }
+          },
           "inline_state": {
             "type": "object",
             "description": "no-browser render-gap proxy: strings inside __NEXT_DATA__/RSC/Redux/Apollo payloads that do NOT appear in visible text ",
             "additionalProperties": false,
             "properties": {
-              "payload_keys": { "type": "array", "items": { "type": "string" } },
-              "contrast_strings": { "type": "array", "items": { "type": "string" }, "maxItems": 40, "description": "bounded sample of payload-only strings" }
+              "payload_keys": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "contrast_strings": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 40,
+                "description": "bounded sample of payload-only strings"
+              }
             }
           },
           "claim_index": {
@@ -177,13 +700,56 @@
             "description": "deterministic extraction: prices, dates, counts, plan names, version strings, hours - freshness skill adjudicates disagreements across pages",
             "items": {
               "type": "object",
-              "required": ["type", "value", "quote"],
+              "required": [
+                "type",
+                "value",
+                "quote"
+              ],
               "additionalProperties": false,
               "properties": {
-                "type": { "enum": ["price", "date", "count", "plan", "version", "hours", "phone", "address", "eligibility", "deadline", "stock", "shipping", "credential"] },
-                "value": { "type": "string" },
-                "quote": { "type": "string" },
-                "location": { "type": "string" }
+                "type": {
+                  "enum": [
+                    "price",
+                    "date",
+                    "count",
+                    "plan",
+                    "version",
+                    "hours",
+                    "phone",
+                    "address",
+                    "eligibility",
+                    "deadline",
+                    "stock",
+                    "shipping",
+                    "credential"
+                  ]
+                },
+                "value": {
+                  "type": "string"
+                },
+                "quote": {
+                  "type": "string"
+                },
+                "location": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "perf_static": {
+            "type": "object",
+            "description": "Static performance-risk observations only. Never a measured Core Web Vital: real measurement needs CrUX field data or a lab run, which this audit does not perform.",
+            "additionalProperties": false,
+            "properties": {
+              "images_without_dimensions": {
+                "type": "integer"
+              },
+              "images_total": {
+                "type": "integer"
+              },
+              "render_blocking_head_scripts": {
+                "type": "integer",
+                "description": "<script src> in <head> without async/defer"
               }
             }
           }
@@ -195,13 +761,39 @@
       "additionalProperties": false,
       "properties": {
         "soft_404": {
-          "type": ["object", "null"],
+          "type": [
+            "object",
+            "null"
+          ],
           "additionalProperties": false,
           "properties": {
-            "probe_path": { "type": "string" },
-            "status": { "type": "integer" },
-            "is_soft_404": { "type": ["boolean", "null"] },
-            "body_quality": { "type": "object", "additionalProperties": false, "properties": { "has_search": { "type": "boolean" }, "has_navigation": { "type": "boolean" }, "has_suggestions": { "type": "boolean" } } }
+            "probe_path": {
+              "type": "string"
+            },
+            "status": {
+              "type": "integer"
+            },
+            "is_soft_404": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "body_quality": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "has_search": {
+                  "type": "boolean"
+                },
+                "has_navigation": {
+                  "type": "boolean"
+                },
+                "has_suggestions": {
+                  "type": "boolean"
+                }
+              }
+            }
           }
         },
         "redirect_path_preservation": {
@@ -209,23 +801,65 @@
           "description": "known deep page fetched over http and over the non-canonical host variant; dropped path = every citation of that variant loses the answer",
           "items": {
             "type": "object",
-            "required": ["variant", "requested", "final_path", "path_preserved"],
+            "required": [
+              "variant",
+              "requested",
+              "final_path",
+              "path_preserved"
+            ],
             "additionalProperties": false,
             "properties": {
-              "variant": { "enum": ["http", "www", "apex"] },
-              "requested": { "type": "string" },
-              "final_path": { "type": ["string", "null"], "description": "null when the variant could not be resolved at all" },
-              "path_preserved": { "type": ["boolean", "null"] }
+              "variant": {
+                "enum": [
+                  "http",
+                  "www",
+                  "apex"
+                ]
+              },
+              "requested": {
+                "type": "string"
+              },
+              "final_path": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "null when the variant could not be resolved at all"
+              },
+              "path_preserved": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              }
             }
           }
         },
         "llms_txt": {
-          "type": ["object", "null"],
+          "type": [
+            "object",
+            "null"
+          ],
           "additionalProperties": false,
           "properties": {
-            "http_status": { "type": ["integer", "null"] },
-            "content_type": { "type": ["string", "null"] },
-            "format": { "enum": ["llms-txt", "none"] }
+            "http_status": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "content_type": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "format": {
+              "enum": [
+                "llms-txt",
+                "none"
+              ]
+            }
           }
         },
         "internal_link_rot": {
@@ -233,14 +867,39 @@
           "description": "sampled unfetched same-origin links with their fetch status; 410 Gone is correct removal and never rot",
           "items": {
             "type": "object",
-            "required": ["url", "status"],
+            "required": [
+              "url",
+              "status"
+            ],
             "additionalProperties": false,
             "properties": {
-              "url": { "type": "string" },
-              "status": { "type": ["integer", "null"] },
-              "error": { "type": ["string", "null"] },
-              "source_url": { "type": ["string", "null"] },
-              "source_class": { "type": ["string", "null"] }
+              "url": {
+                "type": "string"
+              },
+              "status": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "error": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "source_url": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "source_class": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
             }
           }
         },
@@ -249,28 +908,96 @@
           "description": "robots-aware: homepage only, only when robots allows the probed token; differential vs browser-UA response from the same IP; cf-mitigated / text/html signals recorded",
           "items": {
             "type": "object",
-            "required": ["token", "requested_path", "status"],
+            "required": [
+              "token",
+              "requested_path",
+              "status"
+            ],
             "additionalProperties": false,
             "properties": {
-              "token": { "type": "string" },
-              "requested_path": { "type": "string" },
-              "robots_allows": { "type": ["boolean", "null"], "description": "false => probe skipped, the rule itself is the finding" },
-              "status": { "type": ["integer", "null"] },
-              "content_type": { "type": ["string", "null"] },
+              "token": {
+                "type": "string"
+              },
+              "requested_path": {
+                "type": "string"
+              },
+              "robots_allows": {
+                "type": [
+                  "boolean",
+                  "null"
+                ],
+                "description": "false => probe skipped, the rule itself is the finding"
+              },
+              "status": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "content_type": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "headers": {
                 "type": "object",
                 "additionalProperties": false,
                 "properties": {
-                  "server": { "type": ["string", "null"] },
-                  "cf_ray": { "type": ["string", "null"] },
-                  "cf_mitigated": { "type": ["string", "null"] }
+                  "server": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "cf_ray": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "cf_mitigated": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
                 }
               },
-              "cf_mitigated": { "type": ["boolean", "null"] },
-              "differential": { "type": ["string", "null"], "description": "e.g. 'browser 200 / bot-UA 403' - suspected edge discrimination, medium confidence cap" },
-              "note": { "type": ["string", "null"], "description": "set when the probe was skipped, e.g. robots disallows the token - the rule itself is the finding" },
-              "probe_robots_meta": { "type": ["string", "null"], "description": "robots meta content as seen by THIS bot token's UA - the bot-tier-serve cross-check" },
-              "probe_x_robots_tag": { "type": ["string", "null"], "description": "X-Robots-Tag as seen by THIS bot token's UA" }
+              "cf_mitigated": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "differential": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "e.g. 'browser 200 / bot-UA 403' - suspected edge discrimination, medium confidence cap"
+              },
+              "note": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "set when the probe was skipped, e.g. robots disallows the token - the rule itself is the finding"
+              },
+              "probe_robots_meta": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "robots meta content as seen by THIS bot token's UA - the bot-tier-serve cross-check"
+              },
+              "probe_x_robots_tag": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "X-Robots-Tag as seen by THIS bot token's UA"
+              }
             }
           }
         }
@@ -281,12 +1008,21 @@
       "description": "bounded judgment inputs written beside the snapshot, one per judgment skill",
       "items": {
         "type": "object",
-        "required": ["skill_id", "path"],
+        "required": [
+          "skill_id",
+          "path"
+        ],
         "additionalProperties": false,
         "properties": {
-          "skill_id": { "type": "string" },
-          "path": { "type": "string" },
-          "note": { "type": "string" }
+          "skill_id": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
         }
       }
     }

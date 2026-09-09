@@ -4,25 +4,60 @@
   "title": "Judgment-skill I/O: excerpt files, passages, passages_checked",
   "description": "Three file shapes discriminated by 'kind'. (1) Excerpt files audit/excerpts/<skill>.json are each judgment specialist's single prepared input - one read, one judgment, one write, <=3 tool calls ; excerpts are bounded (<=1,500 chars per candidate location), never whole pages. (2) audit/passages.json is answer-coverage's output mapping generated questions to candidate answer passages. (3) audit/passages_checked.json is collect_snapshot.py --passages output: deterministic text-node contiguity per candidate passage (text-fragment landing survivability), read by referral-experience. NOTE for build_report.py's vendored validator: this schema uses oneOf and is dev-oracle-only; the runtime-validated schemas (output, fragment, snapshot) do not.",
   "oneOf": [
-    { "$ref": "#/definitions/excerpt_file" },
-    { "$ref": "#/definitions/passages_file" },
-    { "$ref": "#/definitions/passages_checked_file" }
+    {
+      "$ref": "#/definitions/excerpt_file"
+    },
+    {
+      "$ref": "#/definitions/passages_file"
+    },
+    {
+      "$ref": "#/definitions/passages_checked_file"
+    }
   ],
   "definitions": {
     "excerpt_file": {
       "type": "object",
-      "required": ["kind", "skill_id", "budget_chars", "pages"],
+      "required": [
+        "kind",
+        "skill_id",
+        "budget_chars",
+        "pages"
+      ],
       "additionalProperties": false,
       "properties": {
-        "kind": { "const": "excerpt" },
-        "skill_id": { "enum": ["answer-coverage-audit", "freshness-consistency-audit", "referral-experience-audit", "offsite-visibility-audit"] },
-        "budget_chars": { "type": "integer", "minimum": 1, "description": "total excerpt budget for this skill's input file" },
-        "generated_at": { "type": "string", "format": "date-time" },
-        "pages": { "type": "array", "maxItems": 8, "items": { "$ref": "#/definitions/excerpt_page" } },
+        "kind": {
+          "const": "excerpt"
+        },
+        "skill_id": {
+          "enum": [
+            "answer-coverage-audit",
+            "freshness-consistency-audit",
+            "referral-experience-audit",
+            "offsite-visibility-audit"
+          ]
+        },
+        "budget_chars": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "total excerpt budget for this skill's input file"
+        },
+        "generated_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "pages": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/definitions/excerpt_page"
+          }
+        },
         "pages_without_content": {
           "type": "array",
           "description": "sampled page URLs with no extractable headings, excerpts, or claims — collapsed here instead of repeated as empty entries",
-          "items": { "type": "string" }
+          "items": {
+            "type": "string"
+          }
         },
         "extras": {
           "type": "object",
@@ -33,22 +68,54 @@
     },
     "excerpt_page": {
       "type": "object",
-      "required": ["url", "page_class", "title", "heading_tree", "main_content_excerpts"],
+      "required": [
+        "url",
+        "page_class",
+        "title",
+        "heading_tree",
+        "main_content_excerpts"
+      ],
       "additionalProperties": false,
       "properties": {
-        "url": { "type": "string" },
-        "page_class": { "type": ["string", "null"], "description": "homepage, decision, docs, recent, about, product, trust, other" },
-        "title": { "type": ["string", "null"] },
+        "url": {
+          "type": "string"
+        },
+        "page_class": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "homepage, decision, docs, recent, about, product, trust, other"
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "heading_tree": {
           "type": "array",
           "items": {
             "type": "object",
-            "required": ["level", "text"],
+            "required": [
+              "level",
+              "text"
+            ],
             "additionalProperties": false,
             "properties": {
-              "level": { "type": "integer" },
-              "text": { "type": "string" },
-              "id": { "type": ["string", "null"], "description": "stable heading ids matter for the referral fragment/anchor checks" }
+              "level": {
+                "type": "integer"
+              },
+              "text": {
+                "type": "string"
+              },
+              "id": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "stable heading ids matter for the referral fragment/anchor checks"
+              }
             }
           }
         },
@@ -57,12 +124,27 @@
           "description": "candidate answer locations only - never the whole page",
           "items": {
             "type": "object",
-            "required": ["char_offset", "text"],
+            "required": [
+              "char_offset",
+              "text"
+            ],
             "additionalProperties": false,
             "properties": {
-              "char_offset": { "type": "integer", "description": "offset into the page's visible_text, for evidence citation" },
-              "text": { "type": "string", "maxLength": 1500 },
-              "location": { "type": ["string", "null"], "description": "e.g. 'under h2 Pricing'" }
+              "char_offset": {
+                "type": "integer",
+                "description": "offset into the page's visible_text, for evidence citation"
+              },
+              "text": {
+                "type": "string",
+                "maxLength": 1500
+              },
+              "location": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "e.g. 'under h2 Pricing'"
+              }
             }
           }
         },
@@ -71,15 +153,40 @@
           "description": "claims from this page relevant to the target skill",
           "items": {
             "type": "object",
-            "required": ["type", "value", "quote"],
+            "required": [
+              "type",
+              "value",
+              "quote"
+            ],
             "additionalProperties": false,
             "properties": {
-              "type": { "type": "string" },
-              "value": { "type": "string" },
-              "quote": { "type": "string" },
-              "location": { "type": ["string", "null"] },
-              "count": { "type": "integer", "minimum": 2, "description": "repeated identical claims collapsed into one row (e.g. a date strip); quote is the first occurrence" },
-              "sample_locations": { "type": "array", "items": { "type": "string" }, "description": "up to 3 further locations of the repeated claim" }
+              "type": {
+                "type": "string"
+              },
+              "value": {
+                "type": "string"
+              },
+              "quote": {
+                "type": "string"
+              },
+              "location": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "count": {
+                "type": "integer",
+                "minimum": 2,
+                "description": "repeated identical claims collapsed into one row (e.g. a date strip); quote is the first occurrence"
+              },
+              "sample_locations": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "up to 3 further locations of the repeated claim"
+              }
             }
           }
         },
@@ -88,63 +195,210 @@
           "description": "precomputed counts so judges never re-derive them from the snapshot",
           "additionalProperties": false,
           "properties": {
-            "visible_chars": { "type": "integer", "minimum": 0 },
-            "heading_count": { "type": "integer", "minimum": 0 },
-            "image_count": { "type": "integer", "minimum": 0 },
-            "table_semantic_count": { "type": "integer", "minimum": 0 },
-            "div_grid_candidates": { "type": "integer", "minimum": 0 },
-            "accordions": { "type": "integer", "minimum": 0 },
-            "details_elements": { "type": "integer", "minimum": 0 },
-            "dialogs": { "type": "integer", "minimum": 0 }
+            "visible_chars": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "heading_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "image_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "table_semantic_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "div_grid_candidates": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "accordions": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "details_elements": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "dialogs": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "anchorable_runs": {
+          "type": "array",
+          "description": "Extraction blocks a passage can be cut from as ONE contiguous run. Draw build_passages.py anchors from inside these: an anchor that is not inside a single run cannot resolve. A short list is itself evidence that commercial facts are stated in fragments (pair with REP-*).",
+          "items": {
+            "type": "object",
+            "required": [
+              "text",
+              "chars",
+              "repeats_on_pages"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "text": {
+                "type": "string"
+              },
+              "chars": {
+                "type": "integer"
+              },
+              "repeats_on_pages": {
+                "type": "integer",
+                "description": "sibling sampled pages carrying the identical run; >1 means templated boilerplate, which anchors fine but is never a per-page fact"
+              }
+            }
           }
         }
       }
     },
     "passages_file": {
       "type": "object",
-      "required": ["kind", "skill_id", "questions"],
+      "required": [
+        "kind",
+        "skill_id",
+        "questions"
+      ],
       "additionalProperties": false,
       "properties": {
-        "kind": { "const": "passages" },
-        "skill_id": { "const": "answer-coverage-audit" },
-        "generated_at": { "type": "string", "format": "date-time" },
-        "questions": { "type": "array", "minItems": 1, "items": { "$ref": "#/definitions/question" } }
+        "kind": {
+          "const": "passages"
+        },
+        "skill_id": {
+          "const": "answer-coverage-audit"
+        },
+        "generated_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "questions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/question"
+          }
+        }
       }
     },
     "question": {
       "type": "object",
-      "required": ["question_id", "question", "source", "expected_page"],
+      "required": [
+        "question_id",
+        "question",
+        "source",
+        "expected_page"
+      ],
       "additionalProperties": false,
       "properties": {
-        "question_id": { "type": "string", "pattern": "^Q-[0-9]{3}$" },
-        "question": { "type": "string" },
-        "source": { "enum": ["site-derived", "market-derived"], "description": "site-derived: what the site's own pages claim to answer; market-derived: what a category customer would ask regardless. Market-derived questions with no answering page feed opportunities[], not findings. The prompt set also drives offsite-visibility probes." },
-        "intent": { "enum": ["identity", "capability", "transaction", "procedure", "temporal", "comparison", "trust", "local"] },
-        "expected_page": { "type": "string", "description": "the page that should answer this question" },
-        "candidate_passage": { "type": "string", "maxLength": 2000, "description": "verbatim from the page; omit the key (keep the entry) when the question is unanswered" },
-        "qualifier_present": { "type": "boolean", "description": "does the passage carry its own qualifications/exceptions?" },
-        "source_location": { "type": ["string", "null"], "description": "heading path / char offset for evidence" }
+        "question_id": {
+          "type": "string",
+          "pattern": "^Q-[0-9]{3}$"
+        },
+        "question": {
+          "type": "string"
+        },
+        "source": {
+          "enum": [
+            "site-derived",
+            "market-derived"
+          ],
+          "description": "site-derived: what the site's own pages claim to answer; market-derived: what a category customer would ask regardless. Market-derived questions with no answering page feed opportunities[], not findings. The prompt set also drives offsite-visibility probes."
+        },
+        "intent": {
+          "enum": [
+            "identity",
+            "capability",
+            "transaction",
+            "procedure",
+            "temporal",
+            "comparison",
+            "trust",
+            "local"
+          ]
+        },
+        "expected_page": {
+          "type": "string",
+          "description": "the page that should answer this question"
+        },
+        "candidate_passage": {
+          "type": "string",
+          "maxLength": 2000,
+          "description": "verbatim from the page; omit the key (keep the entry) when the question is unanswered"
+        },
+        "qualifier_present": {
+          "type": "boolean",
+          "description": "does the passage carry its own qualifications/exceptions?"
+        },
+        "source_location": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "heading path / char offset for evidence"
+        },
+        "anchor_status": {
+          "enum": [
+            "resolved",
+            "unanswered",
+            "unresolved"
+          ],
+          "description": "resolved: build_passages.py extracted candidate_passage. unanswered: no anchor drafted - the site does not answer the question. unresolved: an anchor was drafted but could not be pinned to one contiguous run; a quoting/fragmentation signal, NEVER evidence that the question is unanswered."
+        }
       }
     },
     "passages_checked_file": {
       "type": "object",
-      "required": ["kind", "results"],
+      "required": [
+        "kind",
+        "results"
+      ],
       "additionalProperties": false,
       "properties": {
-        "kind": { "const": "passages_checked" },
-        "generated_at": { "type": "string", "format": "date-time" },
+        "kind": {
+          "const": "passages_checked"
+        },
+        "generated_at": {
+          "type": "string",
+          "format": "date-time"
+        },
         "results": {
           "type": "array",
           "items": {
             "type": "object",
-            "required": ["question_id", "page_url", "contiguous"],
+            "required": [
+              "question_id",
+              "page_url",
+              "contiguous"
+            ],
             "additionalProperties": false,
             "properties": {
-              "question_id": { "type": "string" },
-              "page_url": { "type": "string" },
-              "contiguous": { "type": "boolean", "description": "candidate_passage exists as a contiguous visible text run - within one text block or spanning two adjacent blocks (scroll-to-text range fragments match across block boundaries); interleaved headings still fail" },
-              "quote": { "type": ["string", "null"] },
-              "note": { "type": ["string", "null"], "description": "e.g. 'price split across three spans', 'inside collapsed details'" }
+              "question_id": {
+                "type": "string"
+              },
+              "page_url": {
+                "type": "string"
+              },
+              "contiguous": {
+                "type": "boolean",
+                "description": "candidate_passage exists as a contiguous visible text run - within one text block or spanning two adjacent blocks (scroll-to-text range fragments match across block boundaries); interleaved headings still fail"
+              },
+              "quote": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "note": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "e.g. 'price split across three spans', 'inside collapsed details'"
+              }
             }
           }
         }

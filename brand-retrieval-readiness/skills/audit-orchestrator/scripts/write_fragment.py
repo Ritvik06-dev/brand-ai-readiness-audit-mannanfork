@@ -76,6 +76,15 @@ def fix_results(frag, notes):
         obs = r.get("observations")
         if not isinstance(obs, dict):
             r["observations"] = {}
+        # The merge reads urls only on a finding (it becomes affected_urls); on a
+        # pass or a not_evaluated it is authored output nothing ever reads, and
+        # on a wide sample that is the largest single block of wasted tokens in
+        # the fragment. Drop it rather than asking the author to remember.
+        if r.get("gate") != "finding" and r.get("urls"):
+            n = len(r["urls"])
+            del r["urls"]
+            notes.append("%s: dropped %d unread urls from a %s result"
+                         % (cid, n, r.get("gate")))
         for k, v in list(r.items()):
             if k not in ("check_id", "gate", "observations", "urls", "affected_urls",
                          "evidence_quality", "candidate_finding", "evidence"):

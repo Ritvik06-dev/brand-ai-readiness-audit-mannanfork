@@ -45,8 +45,15 @@ specialists + fragment validation) into `./audit/`:
 
 ```
 python3 skills/audit-orchestrator/scripts/run_phase1.py --url <URL> --out-dir ./audit \
-  --site-type <types> --capabilities web_fetch[,web_search][,browser][,subagents]
+  --site-type auto --capabilities web_fetch[,web_search][,browser][,subagents]
 ```
+
+`--site-type auto` is the default: the collector classifies the site from the
+titles, headings, link text, URL shapes and JSON-LD types it already parsed, and
+prints the proposal with its evidence for the agent to accept or override. Pass
+an explicit type only to override. `--reuse-snapshot` skips collection when
+`./audit/snapshot.json` already exists, so a site is never fetched twice in one
+audit.
 
 Judgment specialists follow their SKILL.md files against the prepared excerpts, then:
 

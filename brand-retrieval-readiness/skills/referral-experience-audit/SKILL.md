@@ -31,15 +31,17 @@ visitor, judged here because they land on the citation).
 ## Inputs
 
 - Prepared excerpt file `audit/excerpts/referral-experience-audit.json` (one read): pages with
-  `heading_tree` (ids matter), first excerpts, `extras.pages_signals` (overlays, accordions,
-  details, dialogs per page), `extras.soft_404` (probe result + body quality), and
-  `extras.redirect_path_preservation`. `extras.checks` carries the check templates;
+  `heading_tree` (ids matter), first excerpts, `extras.pages_signals` (per page: overlays,
+  accordions, dialogs, `details_elements` with `details_open` and `details_collapsed`,
+  `images_without_dimensions` of `images_total`, `render_blocking_head_scripts`),
+  `extras.soft_404` (probe result + body quality), and
+  `extras.redirect_path_preservation`. Every count a check's `evidence_template` asks for is
+  measured there: quote it, never recount it, never open the snapshot to derive it. `extras.checks` carries the check templates;
   `extras.fragment_shape` the fragment keys; `extras.phase1_findings` lists the phase-1
   findings (pairing with REP-* without re-reading fragments).
 - `audit/passages_checked.json` — written by the `--passages` post-step: per candidate answer
   passage, whether it exists as one contiguous visible text run (`contiguous`) and why not
   (`note`: "price split across spans", "inside collapsed details").
-- Snapshot context relayed when needed: image dimensions and inline render-blocking hints.
 - Runtime contract: judge from the excerpt and `passages_checked` only, in a single pass, and
   write the fragment once; emit partial findings with `not_evaluated` rather than overrun. If
   a read truncates, continue from the truncation offset — do not restart or re-open.
@@ -80,14 +82,19 @@ visitor, judged here because they land on the citation).
      browser capability upgrades to direct observation.
    - **REF-COLLAPSED-ANSWER** — the accordion inversion: content in the DOM but collapsed by
      default is fine for the machine and hostile to the human who arrived for exactly that
-     fact (use `pages_signals` accordions/details/dialogs plus the excerpts). The
-     click-injected counterpart is representation's case — name the pairing, do not
-     double-report.
+     fact. The number is `pages_signals.details_collapsed` (elements minus `details_open`) —
+     `details_elements` alone says nothing, since an open `<details>` hides nothing. Read it,
+     never count by hand. Your judgment is only whether a *decision* fact is inside one; the
+     accordions and dialogs counts scope it. The click-injected counterpart is
+     representation's case — name the pairing, do not double-report.
 4. **Generic friction** — **REF-OVERLAY-BLOCK** (overlay present in the initial HTML —
-   observed, never guessed) and **REF-PERF-RISK** (static indicators: images without dimension
-   attributes, render-blocking hints — a risk observation or `needs_verification` hypothesis
-   only; NEVER a measured Core Web Vital; say that real measurement requires CrUX field data
-   or a lab run, which this audit does not perform).
+   observed, never guessed) and **REF-PERF-RISK**, whose two numbers are measured for you in
+   `pages_signals`: `images_without_dimensions` (of `images_total`) and
+   `render_blocking_head_scripts` (`<script src>` in `<head>` with no async/defer). Quote
+   those; never open the snapshot and never write a script to recount them. A risk
+   observation or `needs_verification` hypothesis only; NEVER a measured Core Web Vital —
+   say that real measurement requires CrUX field data or a lab run, which this audit does
+   not perform.
 5. **Write** the fragment to the orchestrator's `audit/findings/` path.
 
 ## Findings (authoring rules)
@@ -119,7 +126,11 @@ visitor, judged here because they land on the citation).
 
 - The finding fragment to the orchestrator's `audit/findings/` path, shaped by
   `../audit-orchestrator/references/finding_fragment.json`. Never assign `F-` ids; the
-  orchestrator does. Done means valid: the fragment parses as JSON and matches
-  `finding_fragment.json` before handoff (`python3 <orchestrator>/scripts/validate_fragment.py <fragment>` (checks the schema, not just syntax)) — an
-  unvalidated fragment is not a handoff. If INVALID, run `validate_fragment.py --fix <fragment>` first; hand-edit only what it cannot correct. Author the fragment as a JSON draft file (write tool), then run `python3 <orchestrator>/scripts/write_fragment.py --in <draft> --out <final path>` — it validates against finding_fragment.json, applies safe fixes (duplicate results, unknown keys), and prints one line. No per-run builder scripts. Never hand-write the final fragment in place. In your summary, name which family each finding belongs to so the report
+  orchestrator does. One write path, no alternatives: write your fragment
+  to a draft file, then run
+  `python3 <orchestrator>/scripts/write_fragment.py --in <draft> --out <final path>`.
+  It validates against `finding_fragment.json`, applies safe fixes (duplicate results,
+  unknown keys), prints one line, and only then is the fragment handed off. Do not run
+  `validate_fragment.py` yourself and do not write a per-run builder script; the merge
+  salvages anything still invalid. In your summary, name which family each finding belongs to so the report
   can order continuation failures before generic friction.

@@ -77,17 +77,38 @@ gap between them is where the findings and the opportunities live.
    needs more than ~600 characters, redraw tighter or leave the question to `opportunities`.
    You do NOT copy passages by hand: quote a short verbatim **anchor** (≤~20 words, exactly
    as the excerpt renders it, dashes and punctuation included) into the draft, and let
-   `build_passages.py` expand it to the sentence-bounded passage (see step 3). If the
-   builder reports a failure (anchor not found, ambiguous across locations, excerpt clip
-   boundary), re-anchor that question only — the failure is a quoting-fidelity signal,
-   not a site defect.
-3. **Build `audit/passages.json`** via `build_passages.py` (see Output): your draft carries
-   `question_id`, `question`, `source`, `intent`, `expected_page`, a short verbatim
-   `anchor` (≤~20 words from the excerpt), and `qualifier_present`. The script expands
-   anchors to the exact ≤600-char passages, verifies page-block contiguity, and writes the
-   final shape (`kind`/`skill_id`/`questions`; candidate omitted for unanswered questions —
-   keep the entry, never a near-miss guess). The `--passages` post-step records
-   those as no-candidate and tolerates missing pages.
+   `build_passages.py` expand it to the sentence-bounded passage (see step 3).
+   **Draw every anchor from inside one entry of that page's `anchorable_runs`.** Those are
+   the page's contiguous extraction blocks — the only text a passage can be cut from — so an
+   anchor taken from inside one resolves on the first build. An anchor assembled across two
+   runs cannot resolve, by construction. Two further uses of the same field: it carries
+   content the capped `main_content_excerpts` may not reach, so check it before calling a
+   question unanswered; and `repeats_on_pages` > 1 marks templated boilerplate, which anchors
+   fine but is never a per-page fact. If the builder still reports a failure, re-anchor that
+   question only — a quoting-fidelity signal, not a site defect.
+   A page whose only long runs are brand-story prose, with every commercial fact under the
+   40-character floor, is itself the ANS-PASSAGE-INCOMPLETE / REP-TABLE-SEMANTICS evidence.
+3. **Build `audit/passages.json`** via `build_passages.py` (see Output). The draft is the
+   whole contract, one object per question:
+
+   ```json
+   {"questions": [
+     {"question_id": "Q-001", "question": "How much does the Pro plan cost?",
+      "source": "market-derived", "intent": "transaction",
+      "expected_page": "https://example.com/pricing",
+      "anchor": "Pro is $29 per user per month", "qualifier_present": false}
+   ]}
+   ```
+
+   Omit `anchor` entirely for a question the site does not answer; keep the entry. The
+   script cuts the ≤600-char passage from the anchor's own block, so contiguity holds by
+   construction, and writes `kind`/`skill_id`/`questions`.
+   **It always writes.** Resolved questions are kept even when others fail, so a repair pass
+   re-anchors only the FAIL lines and never redrafts the set. Each question comes back with
+   an `anchor_status`: `resolved`, `unanswered` (no anchor drafted — a site gap), or
+   `unresolved` (an anchor was drafted but would not pin). **`unresolved` is never evidence
+   that a question is unanswered** — it means the fact is stated in fragments, which pairs
+   with REP-*. Leave it unresolved and say so rather than forcing an anchor.
 4. **Gate the checks** and write the fragment to the orchestrator's `audit/findings/` path:
    - **ANS-QUESTION-UNANSWERED** — a *core* archetype question with no official answering
      passage. Site-derived gap: finding (the site claims the territory and does not cover it).
@@ -158,5 +179,12 @@ gap between them is where the findings and the opportunities live.
   (excerpts_schema `passages_file` shape; fragment per
   `../audit-orchestrator/references/finding_fragment.json`, including its `opportunities[]`).
 - Never assign `F-` ids; the orchestrator does. Done means valid: the fragment parses as
-  JSON and matches `finding_fragment.json` before handoff (`python3 <orchestrator>/scripts/validate_fragment.py <fragment>` (checks the schema, not just syntax)) — an unvalidated fragment is not a handoff. If INVALID, run `validate_fragment.py --fix <fragment>` first; hand-edit only what it cannot correct. Do not write a builder script and do not hand-copy passages: write the draft with short anchors per question, run `python3 <orchestrator>/scripts/build_passages.py --draft <draft> --excerpt audit/excerpts/answer-coverage-audit.json --snapshot audit/snapshot.json --out audit/passages.json`, and fix only the FAIL lines it prints (re-anchor). It extracts the exact passages, verifies page-block contiguity, and writes `passages.json`; the fragment you author by hand carries only the judgment fields. State in your summary which questions were
+  JSON and matches `finding_fragment.json`. Two scripts, one call each, no alternatives:
+  `python3 <orchestrator>/scripts/build_passages.py --draft <draft> --excerpt audit/excerpts/answer-coverage-audit.json --snapshot audit/snapshot.json --out audit/passages.json`
+  for the question set (fix only its FAIL lines, then re-run that one command), and
+  `python3 <orchestrator>/scripts/write_fragment.py --in <fragment draft> --out audit/findings/answer-coverage-audit.json`
+  for the fragment. `write_fragment.py` validates and applies safe fixes; do not run
+  `validate_fragment.py` yourself, do not write a builder script, and do not hand-copy
+  passages. The fragment you author carries only the judgment fields.
+  State in your summary which questions were
   market-derived so the offsite probe set inherits the right phrasing.

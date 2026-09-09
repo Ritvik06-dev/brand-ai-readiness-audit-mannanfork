@@ -82,29 +82,37 @@ from there with explicit paths.
    explicitly declared a local test fixture, in which case pass `--allow-private`. Refuse
    authenticated-area or site-altering requests entirely.
 
-2. **Classify and declare.** Conservatively classify the site (multiple allowed, max 3):
+2. **Declare capabilities; the collector proposes the site type.** Declare only capabilities
+   this run will actually exercise as comma-separated flags — declare `subagents` when the
+   harness exposes them, because the dispatch step fans out with them. Scripts take declared
+   facts as flags and never probe for tools.
+   **Do not classify the site first.** You have not fetched it yet, and a guess from the bare
+   URL costs a second collection when the pages contradict it. Pass `--site-type auto` (the
+   default): the collector classifies from the titles, headings, link text, URL shapes and
+   JSON-LD types it already parsed, and prints one line, for example
+   `site_type (proposed): ecommerce - JSON-LD @type offer/product; 88 URL(s) under /products/`.
+   Accept that line and move on. Override only when it is plainly wrong against the same
+   summary, by re-running with explicit `--site-type <types>` (multiple allowed, max 3, from
    `saas, ecommerce, local-business, docs-developer, publisher, gov-edu, marketplace-platform,
-   org-portfolio` — this gates page sampling, question archetypes, in-scope claim types, and
-   which checks apply. Heuristics: a shop selling physical goods is `ecommerce` (not `saas`);
-   a company site describing services/work is `org-portfolio`. Classify from what the site
-   sells or does — never from words in the domain string, which is not evidence. Do not fetch
-   the site to classify; classify from the request context and confirm against the snapshot
-   summary. Recorded here, frozen for the run — never revisited in judgments; genuine doubt
-   goes to `limitations`, not re-derivation. Declare only capabilities this
-   run will actually exercise as comma-separated flags — declare `subagents` when the
-   harness exposes them, because the dispatch step fans out with them.
-   Then run:
-   `python3 <orchestrator>/scripts/collect_snapshot.py --url <URL> --out ./audit/snapshot.json --site-type <types> --capabilities web_fetch[,web_search][,browser][,subagents]`
-   Scripts take declared facts as flags and never probe for tools. It validates its own output,
-   prints a small summary, and writes `audit/excerpts/<skill>.json` for each judgment
-   specialist. Read only the printed summary. If it reports unreachable or deadline problems,
-   continue with what was captured and record it.
+   org-portfolio`), and say in one sentence why. `site_type (undetermined)` is honest: the
+   run proceeds with every check in scope and confidence capped.
+   The type gates page sampling, question archetypes, in-scope claim types, and which checks
+   apply. Once printed it is frozen for the run — never revisited in judgments; genuine doubt
+   goes to `limitations`, not re-derivation.
+   Run:
+   `python3 <orchestrator>/scripts/collect_snapshot.py --url <URL> --out ./audit/snapshot.json --site-type auto --capabilities web_fetch[,web_search][,browser][,subagents]`
+   It validates its own output, prints a small summary, and writes
+   `audit/excerpts/<skill>.json` for each judgment specialist. Read only the printed summary.
+   If it reports unreachable or deadline problems, continue with what was captured and record
+   it.
 
 3. **Enumerate specialists.** Resolve `MARKETPLACE_ROOT` (Paths above; fallback chain below) and read
    `marketplace.json`. Specialists run in **manifest order** (skip this entrypoint).
 
 4. **Phase 1 (one call).** Run:
-   `python3 <orchestrator>/scripts/run_phase1.py --url <URL> --out-dir ./audit --site-type <types> --capabilities <flags>`
+   `python3 <orchestrator>/scripts/run_phase1.py --url <URL> --out-dir ./audit --reuse-snapshot --capabilities <flags>`
+   `--reuse-snapshot` uses the snapshot step 2 already wrote. Never collect the site twice.
+   (Drop that flag only if step 2 was skipped, and then pass `--site-type auto` here instead.)
    It builds the snapshot, runs the three scripted specialists (access-discovery,
    representation-parity, entity-consistency), validates their fragments, and prints one
    status table — read only that table. Exit nonzero means the snapshot itself failed: read
@@ -121,12 +129,13 @@ from there with explicit paths.
    `gate: "pass"` results carrying `evidence_quality: "semantic-judgment"` are prepared
    passes — leave them untouched. Write the fragment back before step 6.
 
-5. **Judgment specialists** (in manifest order). Each fragment must validate against
-   `finding_fragment.json` before step 6 (each SKILL.md states the gate); the merge salvages
-   anything invalid to `not_evaluated` with a lint warning.
-   In a composed run (excerpts exist) the excerpt is the complete contract — `checks`,
-   `fragment_shape`, `authoring_rules`, `severity_facts` — do not open the specialist's
-   SKILL.md mid-audit; it is the standalone reference. Quote only
+5. **Judgment specialists** (in manifest order). Each writes its fragment through
+   `write_fragment.py`, which validates on the way out; the merge salvages anything still
+   invalid to `not_evaluated` with a lint warning.
+   Read each specialist's SKILL.md once, when you start that specialist, for its procedure.
+   Its excerpt carries the data contract — `checks`, `fragment_shape`, `authoring_rules`,
+   `severity_facts` — so do not go looking for schemas or catalogs beyond the two files.
+   Two files per specialist, read once each, then author: nothing else. Quote only
    `check_id`s from the excerpt's `extras.checks` — ids outside the catalog do not exist.
    Remove helper/scratch scripts from the working directory before step 6.
    - `answer-coverage-audit`: read `audit/excerpts/answer-coverage-audit.json` ONCE, follow its
@@ -144,23 +153,27 @@ from there with explicit paths.
      `not_evaluated` ("deadline shed"). Without search, reason over the snapshot's
      `external_presence[]` only; never invent probe results.
    - `referral-experience-audit` (wave 2): read `audit/excerpts/referral-experience-audit.json`
-     once, plus `audit/passages_checked.json`; write its fragment. Past 210 s elapsed,
+     once, plus `audit/passages_checked.json`; write its fragment. Past 210 s on that same
+     printed clock,
      referral judges continuation failures for at most 3 questions (its SKILL.md timebox)
      and offsite-visibility sheds entirely — then go straight to step 6.
 
-6. **Report.** First validate every fragment in one pass (`validate_fragment.py` over each
-   file in `./audit/findings/`); on INVALID run with `--fix` first and hand-edit only the
-   remainder, then re-validate before merging. Then run:
+6. **Report.** Every fragment was already validated when it was written (`run_phase1.py`
+   validates the scripted three; `write_fragment.py` validates each judgment one), so do not
+   re-validate here. Run:
    `python3 <orchestrator>/scripts/build_report.py --site <host> --out ./audit/report.json --snapshot ./audit/snapshot.json --fragment ./audit/findings/<each>.json` (repeat `--fragment` once per fragment file; shell globs are not expanded).
    It assigns finding IDs, dedups root causes, backfills `not_evaluated`, lints forbidden
    claims, validates the report schema, and prints the human summary.
 
-7. **Emit.** Read `./audit/report.json` once for the human summary below — the build already
-   validated its schema — then write the summary in chat in your own words: what is broken in
-   fix order, with owner and verify-line each, plus the honest limits. Never paste the report
-   JSON in chat; point to its path (`./audit/report.json`) instead. State
-   `audit_status`, `coverage`, and every `not_evaluated` check explicitly — "not evaluated"
-   is never a defect and never silently dropped. After a valid report: stop. No further
+7. **Emit.** The build has already written the full document to `./audit/report.md` —
+   findings with evidence, why-it-matters, fix, owner, verify line and affected URLs; what
+   passed; opportunities; needs-verification; every `not_evaluated` check with its reason —
+   alongside the machine-readable `./audit/report.json`. **Do not rewrite either one, and do
+   not re-read `report.json` to restate it.** From the summary the build printed, say in chat
+   in at most ten lines: the headline problem, the top two or three fixes in order,
+   `audit_status` and coverage, and the honest limits. Then point at `./audit/report.md` for
+   the rest. Never paste report JSON in chat. "Not evaluated" is never a defect and is never
+   silently dropped; it is in the document. After a valid report: stop. No further
    verification passes.
 
 ## Dispatch (parallel-first when subagents are declared, serial fallback)

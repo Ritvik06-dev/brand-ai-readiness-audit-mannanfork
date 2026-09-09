@@ -256,6 +256,8 @@ class PageExtractor(HTMLParser):
         self._state_key = None
         self._state_payloads = []
         self.canvas = 0
+        self._in_head = False
+        self.render_blocking_head_scripts = 0
         self.svg_open = 0
         self.svg_text = 0
         self.video = 0
@@ -263,6 +265,7 @@ class PageExtractor(HTMLParser):
         self._in_video = 0
         self.tables = 0
         self.details = 0
+        self.details_open = 0
         self.dialog = 0
         self.accordion_signals = 0
         self.overlay_signal = None
@@ -309,9 +312,19 @@ class PageExtractor(HTMLParser):
             self.images.append({"src": urljoin(self.base, a.get("src") or ""),
                                 "alt": alt, "alt_empty": not (alt and alt.strip()),
                                 "width": a.get("width"), "height": a.get("height")})
+        if tag == "head":
+            self._in_head = True
+        if tag == "body":
+            self._in_head = False
         if tag in ("script", "style", "noscript", "template"):
             self.skip_depth += 1
             if tag == "script":
+                stype_rb = (a.get("type") or "text/javascript").lower()
+                if (self._in_head and a.get("src")
+                        and "async" not in a and "defer" not in a
+                        and stype_rb in ("text/javascript", "application/javascript",
+                                         "module", "")):
+                    self.render_blocking_head_scripts += 1
                 stype = (a.get("type") or "").lower()
                 if stype == "application/ld+json":
                     self._jsonld_buf = []
@@ -357,6 +370,10 @@ class PageExtractor(HTMLParser):
             self.tables += 1
         elif tag == "details":
             self.details += 1
+            # default-open is the whole question for REF-COLLAPSED-ANSWER:
+            # <details> alone says nothing, <details> without open hides the answer
+            if "open" in a:
+                self.details_open += 1
         elif tag == "dialog" or a.get("role") == "dialog":
             self.dialog += 1
         elif tag == "canvas":
@@ -571,7 +588,13 @@ def capture_page(res, url, extractor, sitemap_lastmod):
         "interactive": {"accordions": extractor.accordion_signals,
                         "dialogs": extractor.dialog,
                         "details_elements": extractor.details,
+                        "details_open": extractor.details_open,
                         "overlay_in_raw_html": extractor.overlay_signal},
+        "perf_static": {
+            "images_without_dimensions": sum(
+                1 for i in extractor.images if not (i.get("width") and i.get("height"))),
+            "images_total": len(extractor.images),
+            "render_blocking_head_scripts": extractor.render_blocking_head_scripts},
         "non_text": {"canvas": extractor.canvas,
                      "svg_without_text": max(0, extractor.svg_open - (1 if extractor.svg_text else 0)),
                      "video_without_transcript": max(0, extractor.video - extractor.video_transcript)},
@@ -937,7 +960,9 @@ FRAGMENT_SHAPE = {
     "result_required": ["check_id", "gate"],
     "result_keys": ["check_id", "gate", "urls", "observations", "evidence_quality",
                     "candidate_finding"],
-    "urls_note": ("result-level 'urls' is the array of page URLs this result aggregates; "
+    "urls_note": ("write 'urls' ONLY on a gate:'finding' result - the merge reads it "
+                  "nowhere else and the writer strips it from passes. "
+                  "result-level 'urls' is the array of page URLs this result aggregates; "
                   "the report renames it affected_urls - never write affected_urls in a fragment"),
     "observations_rule": "observations is an object of measured values, or omit the key; never null",
     "evidence_quality_enum": ["direct-measurement", "direct-representation-comparison",
@@ -951,6 +976,19 @@ FRAGMENT_SHAPE = {
     "sampling_gap": ("expected page unsampled, or question unanswerable from sampled pages: "
                      "not_evaluated with reason 'sampling limitation: ...', never a finding; "
                      "market-derived gaps with no answering page go to opportunities[], not findings"),
+    # Top-level arrays besides results[]. Without these two the "complete contract"
+    # claim was false and the model had to open finding_fragment.json to write the
+    # very entries the authoring rules demand.
+    "not_evaluated_item_required": ["check_id", "reason"],
+    "not_evaluated_item_keys": ["check_id", "reason"],
+    "not_evaluated_note": ("top-level not_evaluated[] is an alternative to a "
+                           "gate:'not_evaluated' result; either is accepted, never both "
+                           "for one check_id"),
+    "opportunity_required": ["title", "rationale", "priority"],
+    "opportunity_keys": ["title", "rationale", "priority"],
+    "opportunity_note": ("carried only by the skill that owns them (answer-coverage: "
+                         "market-derived demand with no answering page); never inside "
+                         "results[] and never a finding"),
     "note": ("candidate_finding is required only when gate == 'finding'; "
                "gate is one of finding, pass, not_evaluated"),
 }
@@ -1003,12 +1041,195 @@ def cap_claims(claims):
     return out
 
 
+SITE_TYPE_RULES = [
+    # (site_type, jsonld @types, url-path markers, nav/heading phrases, weight)
+    ("ecommerce",
+     {"product", "offer", "aggregateoffer", "itemlist/product"},
+     ("/products/", "/product/", "/collections/", "/cart", "/checkout", "/shop"),
+     ("add to cart", "add to bag", "shopping cart", "free shipping", "sale price")),
+    ("docs-developer",
+     {"techarticle", "apireference", "softwaresourcecode"},
+     ("/docs", "/documentation", "/api/", "/reference", "/guide", "/tutorial",
+      "/whatsnew", "/library", "/manual"),
+     ("api reference", "getting started", "installation", "changelog", "sdk",
+      "documentation", "module index", "library reference", "release notes")),
+    ("saas",
+     {"softwareapplication", "webapplication", "service"},
+     ("/pricing", "/signup", "/sign-up", "/login", "/integrations", "/features",
+      "/plan", "/enterprise", "/customers", "/security"),
+     ("free trial", "start free", "per user", "per month", "book a demo",
+      "pricing", "sign up", "log in", "get started free", "for teams")),
+    # /contact is on almost every site: it is not a locality signal. This type
+    # needs a local JSON-LD type or explicit place/hours wording to score.
+    ("local-business",
+     {"localbusiness", "restaurant", "dentist", "medicalclinic", "medicalbusiness",
+      "store", "hotel", "professionalservice"},
+     ("/locations", "/book-appointment", "/appointment", "/directions", "/menu",
+      "/opening-hours"),
+     ("opening hours", "book an appointment", "find us", "call us", "our location",
+      "walk-ins", "make a reservation")),
+    ("publisher",
+     {"newsarticle", "article", "blogposting", "newsmediaorganization", "liveblogposting"},
+     ("/news", "/article", "/story", "/blog/", "/opinion", "/archive"),
+     ("subscribe", "latest news", "breaking", "editor", "newsletter")),
+    ("gov-edu",
+     {"governmentorganization", "collegeoruniversity", "educationalorganization",
+      "govermentservice", "school"},
+     ("/admission", "/scheme", "/tender", "/notice", "/circular", "/department"),
+     ("admission", "notification", "government of", "prospectus", "faculty")),
+    ("marketplace-platform",
+     {"itemlist", "searchresultspage"},
+     ("/sellers", "/vendors", "/listings", "/marketplace", "/browse"),
+     ("become a seller", "list your", "sellers", "vendors", "marketplace")),
+    ("org-portfolio",
+     {"organization", "ngo", "nonprofit", "person", "creativework"},
+     ("/about", "/work", "/projects", "/services", "/portfolio", "/team"),
+     ("our work", "our mission", "case study", "what we do", "get in touch")),
+]
+
+
+def classify_site_type(pages, candidate_urls, host, max_types=3):
+    """Propose site_type(s) from what was actually fetched.
+
+    Classification used to be the agent's guess made BEFORE any fetch, from a
+    bare URL - so it guessed, collected, learned the truth from page titles, and
+    collected again. The collector already holds every title, heading, link and
+    JSON-LD @type, so it proposes and the agent confirms. The domain string is
+    never evidence; only .gov/.edu-class hostnames are, and only as a hint.
+    """
+    scores, why = {}, {}
+    types_seen = set()
+    for p in pages:
+        for blob in (p.get("jsonld") or []):
+            for m in re.finditer(r'"@type"\s*:\s*"([^"]+)"', json.dumps(blob)
+                                 if not isinstance(blob, str) else blob):
+                types_seen.add(m.group(1).strip().lower())
+    paths = [urlparse(u).path.lower() for u in candidate_urls]
+    paths += [urlparse(p["requested_url"]).path.lower() for p in pages]
+    text = " ".join(
+        [(p.get("title") or "").lower() for p in pages]
+        + [(h.get("text") or "").lower() for p in pages for h in (p.get("headings") or [])]
+        + [(a.get("anchor_text") or "").lower() for p in pages for a in (p.get("links") or [])[:120]]
+    )
+    for name, jtypes, markers, phrases in SITE_TYPE_RULES:
+        s, ev = 0, []
+        hit_types = sorted(types_seen & jtypes)
+        if hit_types:
+            s += 4 * len(hit_types)
+            ev.append("JSON-LD @type " + "/".join(hit_types[:3]))
+        n_paths = sum(1 for p in paths if any(m in p for m in markers))
+        if n_paths:
+            s += min(6, n_paths)
+            ev.append("%d URL(s) under %s" % (n_paths, "/".join(markers[:2])))
+        hit_ph = [ph for ph in phrases if ph in text]
+        if hit_ph:
+            s += 2 * len(hit_ph)
+            ev.append("wording %s" % ", ".join('"%s"' % x for x in hit_ph[:2]))
+        if s:
+            scores[name], why[name] = s, "; ".join(ev)
+    h = (host or "").lower()
+    if re.search(r"(^|\.)(gov|mil)(\.[a-z]{2,3})?$", h) or re.search(
+            r"(^|\.)(edu|ac)(\.[a-z]{2,3})?$", h) or h.endswith(".nic.in"):
+        # a .gov/.edu-class hostname is near-definitive, unlike any wording signal
+        scores["gov-edu"] = scores.get("gov-edu", 0) + 10
+        why["gov-edu"] = ("government/education hostname; "
+                          + why.get("gov-edu", "")).strip("; ")
+    # Host SHAPE, not host identity: a docs./api./shop. subdomain is a structural
+    # statement about what the site serves, and it is what makes a docs host with
+    # no /docs path classifiable at all. Never a brand or category guess.
+    for prefix, name in (("docs.", "docs-developer"), ("developer.", "docs-developer"),
+                         ("api.", "docs-developer"), ("shop.", "ecommerce"),
+                         ("store.", "ecommerce"), ("news.", "publisher"),
+                         ("blog.", "publisher")):
+        if h.startswith(prefix):
+            scores[name] = scores.get(name, 0) + 5
+            why[name] = ("%s hostname; " % prefix.rstrip(".") + why.get(name, "")).strip("; ")
+    if not scores:
+        return [], {}
+    top = sorted(scores.items(), key=lambda kv: (-kv[1], kv[0]))
+    best = top[0][1]
+    chosen = [n for n, s in top[:max_types] if s >= max(4, best * 0.5)]
+    return chosen, {n: why[n] for n in chosen}
+
+
+def cap_sibling_headings(tree, keep=6):
+    """Collapse long runs of same-level siblings to a sample plus a count.
+
+    A catalogue page carries 40 sibling product h3s. They cost excerpt budget in
+    every judgment excerpt and tell a judgment nothing the count does not - what
+    matters is that the level repeats N times, not which 40 products. Heading
+    `id` coverage (REF-*) is preserved: the collapsed marker carries how many of
+    the dropped siblings had ids.
+    """
+    out, i = [], 0
+    while i < len(tree):
+        j = i
+        while j < len(tree) and tree[j]["level"] == tree[i]["level"]:
+            j += 1
+        run = tree[i:j]
+        if len(run) > keep + 1:
+            dropped = run[keep:]
+            with_id = sum(1 for h in dropped if h.get("id"))
+            out.extend(run[:keep])
+            out.append({"level": run[0]["level"],
+                        "text": "[+%d more h%d siblings, %d with an id]"
+                                % (len(dropped), run[0]["level"], with_id),
+                        "id": None})
+        else:
+            out.extend(run)
+        i = j
+    return out
+
+
+def anchorable_runs(pages, per_page=14, min_chars=12, max_chars=600):
+    """Per page, the extraction blocks a passage can actually be cut from.
+
+    An anchor only resolves when it sits inside ONE block: that is what makes the
+    passage a contiguous, fragment-highlightable run. Handing the model this list
+    replaces guessing-then-failing with picking, and the shape of the list is
+    itself evidence - a site whose only quotable runs are four prose paragraphs
+    states every commercial fact in fragments.
+
+    `repeats_on_pages` counts sibling pages carrying the identical run: templated
+    boilerplate, which resolves fine but is never a per-page fact.
+
+    This is a SAMPLE of the page's runs, capped for excerpt budget - a shorter or
+    lower-ranked run that is not listed still anchors fine. The list is drawn from
+    the same index build_passages.py matches against, so nothing listed here can
+    fail to match.
+    """
+    folded = {}
+    for p in pages:
+        runs = []
+        for b in (p.get("_blocks") or []):
+            t = " ".join((b or "").split())
+            if min_chars <= len(t) <= max_chars:
+                runs.append(t)
+        folded[p["requested_url"]] = runs
+    counts = {}
+    for runs in folded.values():
+        for t in set(runs):
+            counts[t] = counts.get(t, 0) + 1
+    out = {}
+    for url, runs in folded.items():
+        seen, rows = set(), []
+        for t in runs:
+            if t in seen:
+                continue
+            seen.add(t)
+            rows.append({"text": t, "chars": len(t), "repeats_on_pages": counts[t]})
+        rows.sort(key=lambda r: (r["repeats_on_pages"], -r["chars"]))
+        out[url] = rows[:per_page]
+    return out
+
+
 def build_excerpts(pages, sitemap_summary, probes, catalog=None, corroboration=None,
                    site_type=""):
     budgets = {"answer-coverage-audit": 24000, "freshness-consistency-audit": 16000,
                "referral-experience-audit": 6000}
     ans_pages, frs_pages, ref_pages, empty_urls = [], [], [], []
     screen_windows = []
+    runs_by_url = anchorable_runs(pages)
     totals = {"answer-coverage-audit": 0, "freshness-consistency-audit": 0,
               "referral-experience-audit": 0}
 
@@ -1023,8 +1244,9 @@ def build_excerpts(pages, sitemap_summary, probes, catalog=None, corroboration=N
         return out
 
     for p in pages:
-        heading_tree = [{"level": h["level"], "text": h["text"], "id": h["id"]}
-                        for h in p["headings"]][:40]
+        heading_tree = cap_sibling_headings(
+            [{"level": h["level"], "text": h["text"], "id": h["id"]}
+             for h in p["headings"]][:40])
         sections = json.loads(json.dumps(p["_sections"])) if p.get("_sections") else []
         excerpt_locs = [{"char_offset": s["char_offset"], "text": s["text"][:1500],
                          "location": ("under %s" % s["heading"]) if s["heading"] else "top of page"}
@@ -1050,6 +1272,7 @@ def build_excerpts(pages, sitemap_summary, probes, catalog=None, corroboration=N
                           "heading_tree": heading_tree,
                           "main_content_excerpts": bounded(excerpt_locs, "answer-coverage-audit"),
                           "claim_index_subset": capped,
+                          "anchorable_runs": runs_by_url.get(p["requested_url"], []),
                           "page_stats": page_stats})
         frs_pages.append({"url": p["requested_url"], "page_class": p.get("page_class"), "title": p["title"],
                           "heading_tree": heading_tree[:24],
@@ -1241,12 +1464,24 @@ def build_excerpts(pages, sitemap_summary, probes, catalog=None, corroboration=N
                 "overlay_in_raw_html": p["interactive"]["overlay_in_raw_html"],
                 "accordions": p["interactive"]["accordions"],
                 "details_elements": p["interactive"]["details_elements"],
-                "dialogs": p["interactive"]["dialogs"]} for p in pages],
+                "details_open": p["interactive"].get("details_open", 0),
+                "details_collapsed": max(0, p["interactive"]["details_elements"]
+                                         - p["interactive"].get("details_open", 0)),
+                "dialogs": p["interactive"]["dialogs"],
+                "images_without_dimensions":
+                    (p.get("perf_static") or {}).get("images_without_dimensions", 0),
+                "images_total": (p.get("perf_static") or {}).get("images_total", 0),
+                "render_blocking_head_scripts":
+                    (p.get("perf_static") or {}).get("render_blocking_head_scripts", 0)}
+               for p in pages],
                "soft_404": probes.get("soft_404"),
                "redirect_path_preservation": probes.get("redirect_path_preservation", []),
                "note": "passages_checked.json arrives after the --passages post-step;"
                        " REF-SOFT-404 / REF-404-DEAD-END / REF-PATH-DROP-REDIRECT read"
-                       " the probe results here"}}
+                       " the probe results here. details_collapsed (not details_elements)"
+                       " is REF-COLLAPSED-ANSWER's number, and images_without_dimensions"
+                       " / render_blocking_head_scripts are REF-PERF-RISK's - both are"
+                       " measured here, never counted by hand and never a Core Web Vital"}}
     # Hoist byte-identical shared preamble bytes out of the per-page excerpts:
     # nav-heavy sites repeat ~1.5K chars on every page, which alone can exhaust
     # the excerpt budget and force chunked reads. The prefix is stripped from
@@ -1327,7 +1562,10 @@ def _blank_page(url, page_class, timing_ms, content_type=None):
         "headings": [], "links": [], "jsonld": [], "microdata_types": [],
         "open_graph": {}, "images": [],
         "tables": {"semantic_count": 0, "div_grid_candidates": 0},
+        "perf_static": {"images_without_dimensions": 0, "images_total": 0,
+                        "render_blocking_head_scripts": 0},
         "interactive": {"accordions": 0, "dialogs": 0, "details_elements": 0,
+                        "details_open": 0,
                         "overlay_in_raw_html": None},
         "non_text": {"canvas": 0, "svg_without_text": 0,
                      "video_without_transcript": 0},
@@ -1389,7 +1627,9 @@ def run_collect(args):
     notes = []
     valid_site_types = {"saas", "ecommerce", "local-business", "docs-developer",
                         "publisher", "gov-edu", "marketplace-platform", "org-portfolio"}
-    site_types = [s.strip() for s in args.site_type.split(",") if s.strip()]
+    site_type_auto = args.site_type.strip().lower() in ("", "auto")
+    site_types = ([] if site_type_auto else
+                  [s.strip() for s in args.site_type.split(",") if s.strip()])
     bad_types = [s for s in site_types if s not in valid_site_types]
     if bad_types or len(site_types) > 3:
         fail("invalid --site-type %s (valid: %s; max 3)" % (bad_types, sorted(valid_site_types)), [])
@@ -1478,7 +1718,10 @@ def run_collect(args):
             "headings": [], "links": [], "jsonld": [], "microdata_types": [],
             "open_graph": {}, "images": [],
             "tables": {"semantic_count": 0, "div_grid_candidates": 0},
+            "perf_static": {"images_without_dimensions": 0, "images_total": 0,
+                            "render_blocking_head_scripts": 0},
             "interactive": {"accordions": 0, "dialogs": 0, "details_elements": 0,
+                            "details_open": 0,
                             "overlay_in_raw_html": None},
             "non_text": {"canvas": 0, "svg_without_text": 0,
                          "video_without_transcript": 0},
@@ -1508,7 +1751,10 @@ def run_collect(args):
                     "headings": [], "links": [], "jsonld": [], "microdata_types": [],
                     "open_graph": {}, "images": [],
                     "tables": {"semantic_count": 0, "div_grid_candidates": 0},
-                    "interactive": {"accordions": 0, "dialogs": 0, "details_elements": 0,
+                    "perf_static": {"images_without_dimensions": 0, "images_total": 0,
+                            "render_blocking_head_scripts": 0},
+            "interactive": {"accordions": 0, "dialogs": 0, "details_elements": 0,
+                            "details_open": 0,
                                     "overlay_in_raw_html": None},
                     "non_text": {"canvas": 0, "svg_without_text": 0,
                                  "video_without_transcript": 0},
@@ -1532,6 +1778,7 @@ def run_collect(args):
         ex.finalize()
         page = capture_page(res, u, ex, lastmod_by_url.get(u.rstrip("/")))
         page["_sections"] = ex.sections
+        page["_blocks"] = list(ex.blocks)
         page["page_class"] = labels.get(u, "other")
         pages.append(page)
 
@@ -1554,6 +1801,21 @@ def run_collect(args):
     external = resolve_external_presence(fetcher, pages, parts.netloc)
 
     marks.append(("probes", time.time()))
+    # site type: proposed from what was fetched, confirmed by the agent --------
+    proposed, proposal_why = classify_site_type(pages, candidates, parts.netloc)
+    site_type_source = "declared"
+    if site_type_auto:
+        site_types = proposed
+        site_type_source = "proposed" if proposed else "undetermined"
+        if not proposed:
+            notes.append("site_type could not be proposed from the captured pages; "
+                         "checks that gate on it stay in scope and confidence is capped")
+    elif proposed and set(proposed) != set(site_types):
+        notes.append("declared site_type %s differs from the collector's proposal %s "
+                     "(%s) - the declaration was kept" %
+                     (",".join(site_types), ",".join(proposed),
+                      "; ".join("%s: %s" % (k, v) for k, v in proposal_why.items())))
+
     # excerpts ----------------------------------------------------------------
     catalog = _load_catalog()
     ans, frs, ref = build_excerpts(pages, sitemap_summary, {"soft_404": soft,
@@ -1636,6 +1898,10 @@ def run_collect(args):
           % ((soft or {}).get("status"), len(redirects), len(ua_probes), len(external)))
     print("  requests: %d | wall-clock: %ds of %ds deadline | deadline_hit: %s"
           % (fetcher.requests, elapsed, args.deadline, elapsed >= args.deadline - 2))
+    print("  site_type (%s): %s%s" % (
+        site_type_source, ",".join(site_types) or "none",
+        (" - " + "; ".join("%s: %s" % (k, v) for k, v in proposal_why.items()))
+        if site_type_source == "proposed" and proposal_why else ""))
     marks.append(("excerpts_write", time.time()))
     print("  phases: %s" % " | ".join(
         "%s=%ds" % (marks[i + 1][0], int(marks[i + 1][1] - marks[i][1]))
@@ -1696,7 +1962,8 @@ def run_passages(args):
         elapsed = time.time() - datetime.datetime.fromisoformat(
             snapshot["audited_at"].replace("Z", "+00:00")).timestamp()
         shed = elapsed > 210
-        print("BUDGET %ds/300s | SHED: %s | TIMEBOX: %s"
+        print("BUDGET %ds/300s (elapsed since audit start - this is the ONLY clock; "
+              "do not estimate your own) | SHED: %s | TIMEBOX: %s"
               % (int(elapsed), "offsite (+referral 3q)" if shed else "none",
                  "answer-coverage=core-only" if elapsed > 150 else "full"))
     except (KeyError, ValueError, AttributeError):
@@ -1724,12 +1991,18 @@ def run_passages(args):
     results = []
     for q in passages.get("questions", []):
         if not q.get("candidate_passage"):
-            # unanswered question: the entry is kept (it still feeds the
-            # offsite prompt set) with no passage key. Never a crash, never
-            # a contiguity verdict - referral reads this note, not a finding.
+            # No passage. Two very different reasons, never conflated: the site
+            # does not answer it (unanswered), or the quote could not be pinned
+            # (unresolved - a fragmentation signal, not an absence of answer).
+            # Entry is kept either way; it still feeds the offsite prompt set.
+            if q.get("anchor_status") == "unresolved":
+                note = ("anchor drafted but not pinned to one contiguous run - "
+                        "quoting/fragmentation signal, NOT evidence the question is "
+                        "unanswered; pair with REP-* before citing")
+            else:
+                note = "no candidate passage recorded (unanswered question)"
             results.append({"question_id": q.get("question_id"), "page_url": q.get("expected_page"),
-                            "contiguous": False, "quote": None,
-                            "note": "no candidate passage recorded (unanswered question)"})
+                            "contiguous": False, "quote": None, "note": note})
             continue
         want_url = q.get("expected_page")
         page = by_url.get(want_url) or by_norm.get(_norm_key(want_url))
@@ -1881,10 +2154,12 @@ def main():
     ap.add_argument("--allow-private", action="store_true",
                     help="permit private/loopback hosts and non-standard ports "
                          "(local test fixtures only)")
-    ap.add_argument("--site-type", default="",
-                    help="the agent's conservative classification, comma-separated "
-                         "(max 3): saas,ecommerce,local-business,docs-developer,"
-                         "publisher,gov-edu,marketplace-platform,org-portfolio")
+    ap.add_argument("--site-type", default="auto",
+                    help="'auto' (default) proposes the classification from the pages "
+                         "actually fetched and prints it for the agent to confirm or "
+                         "override; or declare it, comma-separated (max 3): saas,"
+                         "ecommerce,local-business,docs-developer,publisher,gov-edu,"
+                         "marketplace-platform,org-portfolio")
     ap.add_argument("--capabilities", default="",
                     help="declared capabilities, comma-separated: "
                          "web_fetch,web_search,browser,subagents")

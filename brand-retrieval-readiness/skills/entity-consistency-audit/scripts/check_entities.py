@@ -51,11 +51,29 @@ LEGAL_TOKENS = {"inc", "llc", "ltd", "gmbh", "corp", "corporation", "co",
                 "company", "limited", "llp", "bv", "ag", "sa", "sas", "pty",
                 "foundation", "nonprofit"}
 STOP_TOKENS = {"the", "and", "of", "a", "an", "to", "for"}
+# A category word next to the brand name is what separates it from namesakes.
+# The list was tech/services-only, so an apparel or food brand whose title reads
+# "Oversized Streetwear & Urban Fashion" scored in_title: false and the model had
+# to overrule the boolean from the raw title - exactly the re-derivation the
+# scripts-own-the-exact split exists to prevent. Kept deliberately broad and
+# category-neutral; it is a presence hint, never the verdict.
 QUALIFIER_WORDS = {
+    # software / services
     "documentation", "software", "library", "framework", "platform", "agency",
-    "studio", "consultancy", "foundation", "nonprofit", "open", "source",
-    "university", "institute", "tools", "developer", "hosting", "marketplace",
-    "clinic", "restaurant", "hotel", "school",
+    "studio", "consultancy", "tools", "developer", "hosting", "marketplace",
+    "app", "api", "saas", "analytics", "cloud",
+    # institutions
+    "foundation", "nonprofit", "open", "source", "university", "institute",
+    "college", "school", "council", "ministry", "department", "government",
+    # local / physical services
+    "clinic", "dental", "dentist", "medical", "hospital", "restaurant", "cafe",
+    "hotel", "salon", "garage", "bakery",
+    # retail / goods
+    "clothing", "apparel", "streetwear", "fashion", "wear", "shop", "store",
+    "brand", "label", "boutique", "jewellery", "jewelry", "furniture",
+    "cosmetics", "beauty", "skincare", "footwear", "outfitters",
+    # media
+    "news", "magazine", "journal", "media", "publisher", "review",
 }
 CITATION_SURFACES = ["google_ai_overviews_ai_mode", "bing_copilot",
                      "chatgpt_search", "perplexity_retrieval", "claude_search"]
@@ -542,7 +560,20 @@ def check_ambiguous_name(pages, ne):
                                               "schema, og:site_name, or homepage title"})
     qualifiers = {"in_title": False, "in_h1": False, "in_schema": False,
                   "in_about": False}
-    title = next((v for g in ne["groups"].groups for s, v in g["reps"] if s == "title"), "")
+    # The FULL homepage <title>, not the name representative. The representative
+    # is the brand-name portion split off at the separator ("WHAT THE FIT"), so
+    # it can never contain a category qualifier - the qualifier is exactly what
+    # lives in the tail that was dropped ("- Oversized Streetwear & Urban
+    # Fashion"). Testing the representative made in_title structurally always
+    # false and forced the model to overrule the boolean from the raw title.
+    title = " ".join(filter(None, [
+        next((p.get("title") for p in pages if p.get("page_class") == "homepage"), None)
+        or (pages[0].get("title") if pages else ""),
+        next(((p.get("open_graph") or {}).get("og:title")
+              for p in pages if p.get("page_class") == "homepage"), None),
+        next(((p.get("metas") or {}).get("description")
+              for p in pages if p.get("page_class") == "homepage"), None),
+    ]))
     h1s = [v for g in ne["groups"].groups for s, v in g["reps"] if s == "h1"]
 
     def has_qualifier(text):
@@ -576,9 +607,18 @@ def check_ambiguous_name(pages, ne):
             "name_variants": [g["reps"][0][1] for g in ne["groups"].groups][:6],
             "qualifier_presence": qualifiers,
             "qualifier_words_checked": sorted(QUALIFIER_WORDS)[:15],
-            "note": "gate is a model judgment; complete per entity-consistency-"
-                    "audit SKILL.md - a shared name alone is never a finding "
-                    "when distinguishing qualifiers exist",
+            "prepared_gate": (
+                "MODEL JUDGMENT - complete here, do not open a SKILL.md for it. "
+                "Ask: could a retrieval system confuse this brand with a different "
+                "entity sharing the name? A shared name alone is NEVER a finding "
+                "when a distinguishing qualifier exists anywhere name-bearing "
+                "(title, og:site_name, H1, schema description, about page). "
+                "qualifier_words_checked is a keyword hint, not the verdict: read "
+                "candidate_name and the page title yourself before trusting a "
+                "false. To finish, either leave gate 'pass' or set it to 'finding', "
+                "and in EITHER case add observations.model_completion: 1-3 "
+                "sentences naming the namesake risk and the qualifier that does or "
+                "does not resolve it."),
         })
 
 

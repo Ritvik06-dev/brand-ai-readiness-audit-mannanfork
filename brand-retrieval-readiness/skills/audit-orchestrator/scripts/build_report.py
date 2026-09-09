@@ -154,6 +154,7 @@ def main():
     findings = []
     needs_verification = []
     not_evaluated = []
+    checks_passed = []
     opportunities = []
     skill_ids = set()
     all_reported = set()
@@ -208,6 +209,11 @@ def main():
                     })
                     lint_warnings.append("fragment %s grades %s as pass on hypothesis evidence; "
                                          "downgraded to not_evaluated" % (frag_path, result["check_id"]))
+                else:
+                    # A pass is a checked-and-clean verdict and belongs in the
+                    # report: "what passed" is the half a reader needs to trust
+                    # the half that did not.
+                    checks_passed.append(result["check_id"])
                 continue
             if gate == "not_evaluated":
                 not_evaluated.append({
@@ -417,6 +423,8 @@ def main():
         "specialists_resolved": 0 if args.degraded else len(skill_ids),
         "specialists_requested": len({c.get("skill_id") for c in catalog.get("checks", [])}),
         "capabilities_unavailable": [],
+        "checks_passed_count": len(set(checks_passed)),
+        "checks_passed": sorted(set(checks_passed)),
     }
     snapshot_present = bool(args.snapshot and os.path.exists(args.snapshot))
     pages_selected = 0
@@ -539,6 +547,49 @@ def _report_markdown(report):
         summary.get("medium", 0), summary.get("low", 0)))
     lines.append("")
     lines.append(report.get("human_summary", ""))
+
+    # Findings in full. The model used to re-compose this from report.json at the
+    # end of every run, which is one large authoring turn spent restating fields
+    # the merge already holds. Rendering them here leaves the model a short spoken
+    # summary to write, not a document.
+    findings = report.get("findings", [])
+    if findings:
+        lines.append("")
+        lines.append("## Findings, in fix order")
+        for f in findings:
+            lines.append("")
+            lines.append("### %s %s" % (f.get("id", ""), f.get("title", "")))
+            lines.append("**Severity: %s · Confidence: %s · Check: `%s`**" % (
+                (f.get("severity") or "").upper(), f.get("confidence", ""),
+                f.get("check_id", "")))
+            if f.get("evidence"):
+                lines.append("")
+                lines.append("**Evidence.** %s" % f["evidence"])
+            if f.get("why_it_matters"):
+                lines.append("")
+                lines.append("**Why it matters.** %s" % f["why_it_matters"])
+            act = f.get("suggested_action") or {}
+            if act.get("summary"):
+                bits = [b for b in ("priority: %s" % act["priority"] if act.get("priority") else "",
+                                    "effort: %s" % act["effort"] if act.get("effort") else "",
+                                    "owner: %s" % act["owner"] if act.get("owner") else "") if b]
+                lines.append("")
+                lines.append("**Fix.** %s%s" % (act["summary"],
+                                                (" (%s)" % ", ".join(bits)) if bits else ""))
+            if act.get("acceptance_test"):
+                lines.append("")
+                lines.append("**Verify.** %s" % act["acceptance_test"])
+            urls = f.get("affected_urls") or []
+            if urls:
+                lines.append("")
+                lines.append("**Affected (%d):** %s%s" % (
+                    len(urls), ", ".join(urls[:5]),
+                    " …" if len(urls) > 5 else ""))
+    passed = cov.get("checks_passed") or []
+    if passed:
+        lines.append("")
+        lines.append("## What passed (%d checks run and clean)" % len(passed))
+        lines.append(", ".join("`%s`" % c for c in passed))
     opps = report.get("opportunities", [])
     if opps:
         lines.append("")

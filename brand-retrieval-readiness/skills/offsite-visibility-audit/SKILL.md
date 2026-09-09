@@ -56,8 +56,9 @@ invention.
 2. **Select ≤ 6 probes** from the prompt set, weighted toward market-derived questions (they
    are the demand the site did not choose). At most one brand-anchored probe, labeled by
    adding `label: "navigational"` to that probe's row (market-derived rows carry no label).
-   First read the clock: the `--passages` post-step printed seconds elapsed since the
-   snapshot — if it said > 210 s (or more than 3.5 min have passed since the audit began),
+   First read the clock. There is exactly one clock: the number the `--passages`
+   post-step printed (`BUDGET <n>s/300s`). Do not estimate elapsed time yourself and do not
+   substitute your own sense of how long the run has taken — if that print said > 210 s,
    shed: emit all four OFF checks as `not_evaluated` ("deadline shed") and finish. If the
    prompt set is empty or missing, stop here: emit all four OFF checks as `not_evaluated`
    and finish — never improvise probes to fill the silence.
@@ -115,8 +116,12 @@ invention.
 
 - The finding fragment to the orchestrator's `audit/findings/` path, shaped by
   `../audit-orchestrator/references/finding_fragment.json`. Never assign `F-` ids; the
-  orchestrator does. Done means valid: the fragment parses as JSON and matches
-  `finding_fragment.json` before handoff (`python3 <orchestrator>/scripts/validate_fragment.py <fragment>` (checks the schema, not just syntax)) — an
-  unvalidated fragment is not a handoff. If INVALID, run `validate_fragment.py --fix <fragment>` first; hand-edit only what it cannot correct. Author the fragment as a JSON draft file (write tool), then run `python3 <orchestrator>/scripts/write_fragment.py --in <draft> --out <final path>` — it validates against finding_fragment.json, applies safe fixes (duplicate results, unknown keys), and prints one line. No per-run builder scripts. Never hand-write the final fragment in place. Every recorded probe row appears in the relevant result's `observations`
+  orchestrator does. One write path, no alternatives: write your fragment
+  to a draft file, then run
+  `python3 <orchestrator>/scripts/write_fragment.py --in <draft> --out <final path>`.
+  It validates against `finding_fragment.json`, applies safe fixes (duplicate results,
+  unknown keys), prints one line, and only then is the fragment handed off. Do not run
+  `validate_fragment.py` yourself and do not write a per-run builder script; the merge
+  salvages anything still invalid. Every recorded probe row appears in the relevant result's `observations`
   so the report's evidence is reconstructible. This skill carries no `opportunities[]` —
   market-derived demand with no answering page is answer-coverage's channel.

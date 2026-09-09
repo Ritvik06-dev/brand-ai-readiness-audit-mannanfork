@@ -140,7 +140,11 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description="Phase 1: snapshot + scripted specialists, one call.")
     ap.add_argument("--url", required=True)
     ap.add_argument("--out-dir", default="audit")
-    ap.add_argument("--site-type", default="")
+    ap.add_argument("--site-type", default="auto",
+                    help="'auto' lets collect_snapshot propose from the fetched pages")
+    ap.add_argument("--reuse-snapshot", action="store_true",
+                    help="use an existing <out-dir>/snapshot.json instead of collecting "
+                         "again (the orchestrator's step 2 already collected)")
     ap.add_argument("--capabilities", default="web_fetch")
     ap.add_argument("--max-pages", type=int, default=8)
     ap.add_argument("--deadline", type=int, default=120)
@@ -157,22 +161,28 @@ def main(argv=None):
     print("phase1 wall-clock: started %s (shed off-site probes if more than 210 s "
           "have elapsed when wave 2 begins)" % started)
 
-    cmd = [sys.executable, os.path.join(here, "collect_snapshot.py"),
-           "--url", args.url, "--out", snap, "--site-type", args.site_type,
-           "--capabilities", args.capabilities, "--max-pages", str(args.max_pages),
-           "--deadline", str(args.deadline)]
-    if args.allow_private:
-        cmd.append("--allow-private")
-    rc, out, err = run(cmd, args.deadline + 120)
-    tail = [ln for ln in out.strip().splitlines() if ln.strip()][-6:]
-    print("phase1: snapshot %s" % ("OK" if rc == 0 else "FATAL (rc=%d)" % rc))
-    for ln in tail:
-        print("  | %s" % ln[:220])
-    if err.strip() and rc != 0:
-        print("  ! %s" % err.strip().splitlines()[-1][:220])
-    if rc != 0 or not os.path.exists(snap):
-        print("phase1 status: snapshot failed - specialists skipped, record the notes above")
-        return 1
+    if args.reuse_snapshot and os.path.exists(snap):
+        # The orchestrator's step 2 already collected. Re-collecting here spent a
+        # second network pass and a second model turn on identical bytes.
+        print("phase1: snapshot REUSED (%s) - no second collection" % snap)
+    else:
+        cmd = [sys.executable, os.path.join(here, "collect_snapshot.py"),
+               "--url", args.url, "--out", snap, "--site-type", args.site_type,
+               "--capabilities", args.capabilities, "--max-pages", str(args.max_pages),
+               "--deadline", str(args.deadline)]
+        if args.allow_private:
+            cmd.append("--allow-private")
+        rc, out, err = run(cmd, args.deadline + 120)
+        tail = [ln for ln in out.strip().splitlines() if ln.strip()][-7:]
+        print("phase1: snapshot %s" % ("OK" if rc == 0 else "FATAL (rc=%d)" % rc))
+        for ln in tail:
+            print("  | %s" % ln[:220])
+        if err.strip() and rc != 0:
+            print("  ! %s" % err.strip().splitlines()[-1][:220])
+        if rc != 0 or not os.path.exists(snap):
+            print("phase1 status: snapshot failed - specialists skipped, "
+                  "record the notes above")
+            return 1
 
     rows = []
     frag_paths = []
@@ -202,10 +212,19 @@ def main(argv=None):
     print("phase1 status:")
     for skill_id, status in rows:
         print("  %-28s %s" % (skill_id, status))
+    # Elapsed since the AUDIT began, not since this process did: with
+    # --reuse-snapshot a fresh t0 would reset the budget clock and under-report.
+    elapsed = time.monotonic() - t0
+    try:
+        snap_started = datetime.fromisoformat(
+            json.load(open(snap))["audited_at"].replace("Z", "+00:00")).timestamp()
+        elapsed = max(elapsed, time.time() - snap_started)
+    except (OSError, ValueError, KeyError, AttributeError):
+        pass
     print("BUDGET %ds/300s after phase1 | SHED: %s | TIMEBOX: %s" %
-          (int(time.monotonic() - t0),
-           "offsite (+referral 3q)" if time.monotonic() - t0 > 210 else "none",
-           "answer-coverage=core-only" if time.monotonic() - t0 > 150 else "full"))
+          (int(elapsed),
+           "offsite (+referral 3q)" if elapsed > 210 else "none",
+           "answer-coverage=core-only" if elapsed > 150 else "full"))
     return 0
 
 

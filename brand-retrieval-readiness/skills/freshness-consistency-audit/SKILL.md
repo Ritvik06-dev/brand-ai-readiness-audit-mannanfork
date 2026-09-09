@@ -101,7 +101,11 @@ conflicts are the measurable, on-site form of that failure.
 
 - The finding fragment to the orchestrator's `audit/findings/` path, shaped by
   `../audit-orchestrator/references/finding_fragment.json`. Never assign `F-` ids; the
-  orchestrator does. Done means valid: the fragment parses as JSON and matches
-  `finding_fragment.json` before handoff (`python3 <orchestrator>/scripts/validate_fragment.py <fragment>` (checks the schema, not just syntax)) — an
-  unvalidated fragment is not a handoff. If INVALID, run `validate_fragment.py --fix <fragment>` first; hand-edit only what it cannot correct. Author the fragment as a JSON draft file (write tool), then run `python3 <orchestrator>/scripts/write_fragment.py --in <draft> --out <final path>` — it validates against finding_fragment.json, applies safe fixes (duplicate results, unknown keys), and prints one line. No per-run builder scripts. Never hand-write the final fragment in place. Report which pages supplied each side of every conflict so the
+  orchestrator does. One write path, no alternatives: write your fragment
+  to a draft file, then run
+  `python3 <orchestrator>/scripts/write_fragment.py --in <draft> --out <final path>`.
+  It validates against `finding_fragment.json`, applies safe fixes (duplicate results,
+  unknown keys), prints one line, and only then is the fragment handed off. Do not run
+  `validate_fragment.py` yourself and do not write a per-run builder script; the merge
+  salvages anything still invalid. Report which pages supplied each side of every conflict so the
   remediation can name the source of truth.
