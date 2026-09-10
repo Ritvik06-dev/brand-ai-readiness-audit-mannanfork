@@ -78,16 +78,19 @@ gap between them is where the findings and the opportunities live.
    You do NOT copy passages by hand: quote a short verbatim **anchor** (≤~20 words, exactly
    as the excerpt renders it, dashes and punctuation included) into the draft, and let
    `build_passages.py` expand it to the sentence-bounded passage (see step 3).
-   **Draw every anchor from inside one entry of that page's `anchorable_runs`.** Those are
-   the page's contiguous extraction blocks — the only text a passage can be cut from — so an
-   anchor taken from inside one resolves on the first build. An anchor assembled across two
-   runs cannot resolve, by construction. Two further uses of the same field: it carries
-   content the capped `main_content_excerpts` may not reach, so check it before calling a
-   question unanswered; and `repeats_on_pages` > 1 marks templated boilerplate, which anchors
+   **Draw every anchor from inside a single run** — either an entry of that page's
+   `anchorable_runs`, or an `extras.shared_runs` entry (runs carried by several sampled pages
+   are listed once there, with `pages_count`, instead of repeated per page). Those are the
+   page's contiguous extraction blocks, the only text a passage can be cut from, and the
+   builder matches the same index, so an anchor drawn from inside one resolves. An anchor
+   assembled across two runs cannot resolve, by construction. Both arrays are a capped
+   sample: a shorter run that is not listed still anchors fine. Two further uses: they carry
+   content the capped `main_content_excerpts` may not reach, so check them before calling a
+   question unanswered; and a run on several pages is templated boilerplate, which anchors
    fine but is never a per-page fact. If the builder still reports a failure, re-anchor that
    question only — a quoting-fidelity signal, not a site defect.
-   A page whose only long runs are brand-story prose, with every commercial fact under the
-   40-character floor, is itself the ANS-PASSAGE-INCOMPLETE / REP-TABLE-SEMANTICS evidence.
+   A page whose only listed runs are brand-story prose, with every commercial fact living in
+   one-line fragments, is itself the ANS-PASSAGE-INCOMPLETE / REP-TABLE-SEMANTICS evidence.
 3. **Build `audit/passages.json`** via `build_passages.py` (see Output). The draft is the
    whole contract, one object per question:
 
@@ -182,9 +185,14 @@ gap between them is where the findings and the opportunities live.
   JSON and matches `finding_fragment.json`. Two scripts, one call each, no alternatives:
   `python3 <orchestrator>/scripts/build_passages.py --draft <draft> --excerpt audit/excerpts/answer-coverage-audit.json --snapshot audit/snapshot.json --out audit/passages.json`
   for the question set (fix only its FAIL lines, then re-run that one command), and
-  `python3 <orchestrator>/scripts/write_fragment.py --in <fragment draft> --out audit/findings/answer-coverage-audit.json`
-  for the fragment. `write_fragment.py` validates and applies safe fixes; do not run
-  `validate_fragment.py` yourself, do not write a builder script, and do not hand-copy
-  passages. The fragment you author carries only the judgment fields.
+  `python3 <orchestrator>/scripts/write_fragment.py --verdicts --in <verdicts> --excerpt audit/excerpts/answer-coverage-audit.json --out audit/findings/answer-coverage-audit.json`
+  for the fragment. You never hand-write nested fragment JSON: the verdicts file is one flat
+  entry per check, `check` and `gate` required, prose only where the gate is `finding`
+  (`severity`, `confidence`, `title`, `evidence`, `why`, `fix`, `verify`, `owner`, `effort`,
+  `urls`), plus a top-level `opportunities` array. The script assembles the nested results,
+  merges in the collector's measured observations, fills `evidence_quality` and
+  `affected_surfaces` from the catalog, and records any ANS check you submit no verdict for
+  as `not_evaluated` — silence is never a pass. Do not run `validate_fragment.py` yourself,
+  do not write a builder script, and do not hand-copy passages.
   State in your summary which questions were
   market-derived so the offsite probe set inherits the right phrasing.

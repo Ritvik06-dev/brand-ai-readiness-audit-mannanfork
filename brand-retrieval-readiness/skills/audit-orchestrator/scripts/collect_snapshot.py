@@ -1181,22 +1181,23 @@ def cap_sibling_headings(tree, keep=6):
     return out
 
 
-def anchorable_runs(pages, per_page=14, min_chars=12, max_chars=600):
-    """Per page, the extraction blocks a passage can actually be cut from.
+def anchorable_runs(pages, per_page=10, min_chars=12, max_chars=600, budget=9000):
+    """Per page, the extraction runs a passage can actually be cut from.
 
-    An anchor only resolves when it sits inside ONE block: that is what makes the
-    passage a contiguous, fragment-highlightable run. Handing the model this list
-    replaces guessing-then-failing with picking, and the shape of the list is
-    itself evidence - a site whose only quotable runs are four prose paragraphs
-    states every commercial fact in fragments.
+    An anchor only resolves when it sits inside ONE run: that is what makes the
+    passage a contiguous, fragment-highlightable quote. Handing the model this
+    list replaces guessing-then-failing with picking, and the shape of the list
+    is itself evidence - a site whose only quotable runs are four prose
+    paragraphs states every commercial fact in fragments.
 
-    `repeats_on_pages` counts sibling pages carrying the identical run: templated
-    boilerplate, which resolves fine but is never a per-page fact.
+    Runs carried by more than one sampled page are TEMPLATED: they are hoisted
+    into a single shared table naming the pages, instead of being repeated in
+    every page's array. Repeating them cost several KB and pushed the excerpt
+    past a single read.
 
-    This is a SAMPLE of the page's runs, capped for excerpt budget - a shorter or
-    lower-ranked run that is not listed still anchors fine. The list is drawn from
-    the same index build_passages.py matches against, so nothing listed here can
-    fail to match.
+    This is a SAMPLE, capped for excerpt budget - a shorter or lower-ranked run
+    that is not listed still anchors fine. It is drawn from the same index
+    build_passages.py matches against, so nothing listed here can fail to match.
     """
     folded = {}
     for p in pages:
@@ -1206,30 +1207,48 @@ def anchorable_runs(pages, per_page=14, min_chars=12, max_chars=600):
             if min_chars <= len(t) <= max_chars:
                 runs.append(t)
         folded[p["requested_url"]] = runs
-    counts = {}
-    for runs in folded.values():
+    pages_with = {}
+    for url, runs in folded.items():
         for t in set(runs):
-            counts[t] = counts.get(t, 0) + 1
-    out = {}
+            pages_with.setdefault(t, []).append(url)
+    shared, per_page_out, spent = [], {}, 0
+    for t, urls in sorted(pages_with.items(), key=lambda kv: (-len(kv[1]), -len(kv[0]))):
+        # pages_count, not the full URL list: eight URLs per row cost more than
+        # the duplication the hoist was meant to remove. One example locates it.
+        if len(urls) > 1 and len(shared) < 14 and spent + len(t) <= budget // 3:
+            shared.append({"text": t, "chars": len(t), "pages_count": len(urls),
+                           "example_page": sorted(urls)[0]})
+            spent += len(t)
+    shared_texts = {r["text"] for r in shared}
     for url, runs in folded.items():
         seen, rows = set(), []
         for t in runs:
-            if t in seen:
+            if t in seen or t in shared_texts:
                 continue
             seen.add(t)
-            rows.append({"text": t, "chars": len(t), "repeats_on_pages": counts[t]})
+            rows.append({"text": t, "chars": len(t),
+                         "repeats_on_pages": len(pages_with[t])})
         rows.sort(key=lambda r: (r["repeats_on_pages"], -r["chars"]))
-        out[url] = rows[:per_page]
-    return out
+        kept = []
+        for r in rows[:per_page]:
+            if spent + r["chars"] > budget:
+                break
+            kept.append(r)
+            spent += r["chars"]
+        per_page_out[url] = kept
+    return per_page_out, shared
 
 
 def build_excerpts(pages, sitemap_summary, probes, catalog=None, corroboration=None,
                    site_type=""):
-    budgets = {"answer-coverage-audit": 24000, "freshness-consistency-audit": 16000,
+    # main_content_excerpts budget only. answer-coverage was 24000: anchorable_runs
+    # now carries the "content the excerpt did not reach" case that the large
+    # budget was compensating for, and the oversized file needed two reads.
+    budgets = {"answer-coverage-audit": 10000, "freshness-consistency-audit": 8000,
                "referral-experience-audit": 6000}
     ans_pages, frs_pages, ref_pages, empty_urls = [], [], [], []
     screen_windows = []
-    runs_by_url = anchorable_runs(pages)
+    runs_by_url, shared_runs = anchorable_runs(pages)
     totals = {"answer-coverage-audit": 0, "freshness-consistency-audit": 0,
               "referral-experience-audit": 0}
 
@@ -1268,14 +1287,17 @@ def build_excerpts(pages, sitemap_summary, probes, catalog=None, corroboration=N
             "details_elements": inter.get("details_elements", 0) or 0,
             "dialogs": inter.get("dialogs", 0) or 0,
         }
+        # heading ids are REF-* evidence (fragment anchors); ANS and FRS judge
+        # heading TEXT only, so the ids are dropped from their copies.
+        heading_tree_textonly = [{"level": h["level"], "text": h["text"]} for h in heading_tree]
         ans_pages.append({"url": p["requested_url"], "page_class": p.get("page_class"), "title": p["title"],
-                          "heading_tree": heading_tree,
+                          "heading_tree": heading_tree_textonly,
                           "main_content_excerpts": bounded(excerpt_locs, "answer-coverage-audit"),
                           "claim_index_subset": capped,
                           "anchorable_runs": runs_by_url.get(p["requested_url"], []),
                           "page_stats": page_stats})
         frs_pages.append({"url": p["requested_url"], "page_class": p.get("page_class"), "title": p["title"],
-                          "heading_tree": heading_tree[:24],
+                          "heading_tree": heading_tree_textonly[:24],
                           "main_content_excerpts": bounded(excerpt_locs[:1], "freshness-consistency-audit"),
                           "claim_index_subset": capped,
                           "page_stats": page_stats})
@@ -1379,19 +1401,50 @@ def build_excerpts(pages, sitemap_summary, probes, catalog=None, corroboration=N
                 suggested_slots.append({"archetype": arch,
                                         "expected_page": p["requested_url"],
                                         "note": "headings claim this territory"})
-    ans = {"kind": "excerpt", "skill_id": "answer-coverage-audit", "budget_chars": 24000,
+    ans = {"kind": "excerpt", "skill_id": "answer-coverage-audit",
+           "budget_chars": budgets["answer-coverage-audit"],
            "generated_at": _now(), "pages": ans_pages,
            "pages_without_content": empty_urls,
            "extras": {"checks": checks_for(catalog, "answer-coverage-audit"),
                       "fragment_shape": FRAGMENT_SHAPE,
                       "authoring_rules": authoring_rules["answer-coverage-audit"],
                       "severity_facts": severity_facts,
+                      "shared_runs": shared_runs,
                       "suggested_slots": suggested_slots,
                       "corroboration": corroboration or {"independent_resolving": 0,
                                                           "brand_matched": 0},
                       "coverage_appendix": coverage_appendix}}
+    sm = sitemap_summary or {}
+    present = sm.get("lastmod_present_count", 0) or 0
+    distinct = sm.get("lastmod_distinct_count", 0) or 0
+    if not present:
+        frs_lastmod = {"candidate_gate": "not_evaluated",
+                       "evidence": "lastmod absent (0 of %s entries); absence is not "
+                                   "uniformity" % sm.get("entries_count"),
+                       "observations": {"lastmod_present_count": 0,
+                                        "entries_count": sm.get("entries_count")}}
+    else:
+        uniform = distinct <= 1
+        frs_lastmod = {"candidate_gate": "finding" if uniform else "pass",
+                       "evidence": "%d of %s sitemap entries carry lastmod across %d distinct "
+                                   "value(s)" % (present, sm.get("entries_count"), distinct),
+                       "observations": {"lastmod_present_count": present,
+                                        "lastmod_distinct_count": distinct,
+                                        "entries_count": sm.get("entries_count")}}
+    frs_measured = {"FRS-LASTMOD-UNIFORM": frs_lastmod,
+                    "FRS-CLAIM-CONFLICT": {"observations": {
+                        "claim_groups": len(claim_matrix),
+                        "pages_checked": len(pages)}},
+                    "FRS-DATE-CONFLICT": {"observations": {
+                        "pages_with_structured_dates":
+                            sum(1 for p in pages if p.get("_structured_dates")),
+                        "pages_with_visible_dates":
+                            sum(1 for p in pages
+                                if any(c["type"] == "date" for c in p["claim_index"])),
+                        "pages_checked": len(pages)}}}
     frs = {"kind": "excerpt", "skill_id": "freshness-consistency-audit",
-           "budget_chars": 16000, "generated_at": _now(), "pages": frs_pages,
+           "budget_chars": budgets["freshness-consistency-audit"],
+           "generated_at": _now(), "pages": frs_pages,
            "pages_without_content": empty_urls,
            "extras": {"sitemap": sitemap_summary,
                       "page_dates": [{"url": p["requested_url"],
@@ -1405,7 +1458,8 @@ def build_excerpts(pages, sitemap_summary, probes, catalog=None, corroboration=N
                       "severity_facts": severity_facts,
                       "corroboration": corroboration or {"independent_resolving": 0,
                                                           "brand_matched": 0},
-                      "claim_matrix": claim_matrix}}
+                      "claim_matrix": claim_matrix,
+                      "measured": frs_measured}}
     # Pre-digested deterministic relays: finding-candidate + evidence line per
     # check. The pass/finding gate stays with the model (body-quality nuance,
     # e.g. a 404 body with nav but no search, is a judgment).
@@ -1450,8 +1504,52 @@ def build_excerpts(pages, sitemap_summary, probes, catalog=None, corroboration=N
     else:
         relays["REF-PATH-DROP-REDIRECT"] = {"candidate_gate": "pass",
             "evidence": "all %d probed redirect variant(s) preserve the deep path" % len(redirects)}
+    # measured[] is the raw material for write_fragment.py --verdicts: per check,
+    # the numbers the collector already holds plus a gate hint and a written
+    # evidence line. The model supplies a gate and, for findings, prose - it
+    # never retypes an observation the collector measured.
+    def _pages_sig(key):
+        return {p["requested_url"]: (p.get("interactive") or {}).get(key, 0) for p in pages}
+
+    collapsed = {u: max(0, (next(p for p in pages if p["requested_url"] == u)
+                            .get("interactive") or {}).get("details_elements", 0)
+                        - (next(p for p in pages if p["requested_url"] == u)
+                           .get("interactive") or {}).get("details_open", 0))
+                 for u in [p["requested_url"] for p in pages]}
+    perf = {p["requested_url"]: (p.get("perf_static") or {}) for p in pages}
+    overlay_pages = [p["requested_url"] for p in pages
+                     if (p.get("interactive") or {}).get("overlay_in_raw_html")]
+    ref_measured = dict(relays)
+    ref_measured["REF-COLLAPSED-ANSWER"] = {
+        "observations": {"pages_with_collapsed_details":
+                         sum(1 for v in collapsed.values() if v),
+                         "collapsed_details_total": sum(collapsed.values()),
+                         "pages_checked": len(pages),
+                         "per_page": {u: v for u, v in collapsed.items() if v}}}
+    ref_measured["REF-PERF-RISK"] = {
+        "observations": {
+            "images_without_dimensions": sum(v.get("images_without_dimensions", 0)
+                                             for v in perf.values()),
+            "images_total": sum(v.get("images_total", 0) for v in perf.values()),
+            "render_blocking_head_scripts_max": max(
+                [v.get("render_blocking_head_scripts", 0) for v in perf.values()] or [0]),
+            "pages_checked": len(pages),
+            "note": "static risk observation only - never a measured Core Web Vital"}}
+    ref_measured["REF-OVERLAY-BLOCK"] = {
+        "candidate_gate": "finding" if overlay_pages else (
+            "pass" if any((p.get("interactive") or {}).get("overlay_in_raw_html") is not None
+                          for p in pages) else "not_evaluated"),
+        "evidence": ("%d/%d sampled pages carry an overlay in the initial HTML"
+                     % (len(overlay_pages), len(pages))) if overlay_pages else
+                    ("no overlay was present in the initial HTML of %d sampled pages"
+                     % len(pages)),
+        "observations": {"pages_with_overlay": len(overlay_pages),
+                         "pages_checked": len(pages),
+                         "authority": "overlay_in_raw_html is the observation; "
+                                      "screen_windows.overlay_present mirrors it"}}
     ref = {"kind": "excerpt", "skill_id": "referral-experience-audit",
-           "budget_chars": 6000, "generated_at": _now(), "pages": ref_pages,
+           "budget_chars": budgets["referral-experience-audit"],
+           "generated_at": _now(), "pages": ref_pages,
            "pages_without_content": empty_urls,
            "extras": {"checks": checks_for(catalog, "referral-experience-audit"),
                       "fragment_shape": FRAGMENT_SHAPE,
@@ -1459,6 +1557,7 @@ def build_excerpts(pages, sitemap_summary, probes, catalog=None, corroboration=N
                       "severity_facts": severity_facts,
                       "screen_windows": screen_windows,
                       "relays": relays,
+                      "measured": ref_measured,
                       "pages_signals": [
                {"url": p["requested_url"],
                 "overlay_in_raw_html": p["interactive"]["overlay_in_raw_html"],
@@ -1876,9 +1975,17 @@ def run_collect(args):
     manifest = []
     for exc in (ans, frs, ref):
         path = os.path.join(exc_dir, "%s.json" % exc["skill_id"])
+        # budget_chars bounds main_content_excerpts only; file_chars is the real
+        # size, so a reader knows in advance whether this fits a single read.
+        # indent=1, matching what run_phase1's inject_extras rewrites these files
+        # with. Writing indent=2 here meant file_chars described a file that no
+        # longer existed by the time a specialist read it, and cost ~11% more
+        # bytes for whitespace the model gains nothing from.
+        exc["file_chars"] = len(json.dumps(exc, indent=1, ensure_ascii=False))
         with open(path, "w", encoding="utf-8") as fh:
-            json.dump(exc, fh, indent=2, ensure_ascii=False)
+            json.dump(exc, fh, indent=1, ensure_ascii=False)
         manifest.append({"skill_id": exc["skill_id"], "path": os.path.abspath(path),
+                         "file_chars": exc["file_chars"],
                          "note": "single prepared input; one read + one judgment + one write"})
     snapshot["excerpts_manifest"] = manifest
     errs = validate_schema(snapshot, SNAPSHOT_SCHEMA)

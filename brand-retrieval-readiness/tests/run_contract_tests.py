@@ -119,6 +119,78 @@ def check_build_passages(exc_schema):
     print("build_passages: cross-page repeats, punctuation anchors, partial write: OK")
 
 
+def check_verdicts_mode(frag_schema):
+    """write_fragment --verdicts: flat lines in, schema-shaped fragment out."""
+    tmp = tempfile.mkdtemp()
+    excerpt = {"kind": "excerpt", "skill_id": "referral-experience-audit", "pages": [],
+               "extras": {"measured": {
+                   "REF-SOFT-404": {"candidate_gate": "pass",
+                                    "evidence": "A nonexistent path returned HTTP 404."},
+                   "REF-PERF-RISK": {"observations": {"images_without_dimensions": 65,
+                                                      "images_total": 164}}}}}
+    verdicts = {"skill_id": "referral-experience-audit", "verdicts": [
+        {"check": "REF-SOFT-404", "gate": "pass"},
+        {"check": "REF-PERF-RISK", "gate": "finding", "severity": "low",
+         "confidence": "medium", "title": "Undimensioned media on product pages",
+         "evidence": "65 of 164 images carry no width/height.",
+         "fix": "Set width and height on every image.",
+         "verify": "No <img> lacks dimensions on a product page.",
+         "urls": ["https://ex.test/p/1"]},
+        {"check": "REF-OVERLAY-BLOCK", "gate": "not_evaluated", "reason": "no observation"}]}
+    paths = {}
+    for name, obj in (("verdicts", verdicts), ("excerpt", excerpt)):
+        paths[name] = os.path.join(tmp, name + ".json")
+        with open(paths[name], "w", encoding="utf-8") as fh:
+            json.dump(obj, fh)
+    out = os.path.join(tmp, "frag.json")
+    proc = subprocess.run(
+        [sys.executable, os.path.join(ORCH, "scripts", "write_fragment.py"),
+         "--verdicts", "--in", paths["verdicts"], "--excerpt", paths["excerpt"],
+         "--out", out], capture_output=True, text=True)
+    assert proc.returncode == 0, "verdicts assembly must produce a valid fragment:\n" + proc.stdout + proc.stderr
+    frag = load(out)
+    jsonschema.Draft7Validator(frag_schema).validate(frag)
+    by = {r["check_id"]: r for r in frag["results"]}
+    assert by["REF-SOFT-404"]["gate"] == "pass"
+    assert by["REF-SOFT-404"]["observations"]["measured"].startswith("A nonexistent path"), \
+        "the collector's measured evidence line must ride along, not be retyped"
+    assert by["REF-SOFT-404"]["evidence_quality"] == "direct-measurement", \
+        "evidence_quality comes from the catalog, never from the author"
+    perf = by["REF-PERF-RISK"]
+    assert perf["observations"]["images_without_dimensions"] == 65, \
+        "measured observations must be merged into the result"
+    assert perf["candidate_finding"]["suggested_action"]["acceptance_test"], \
+        "verify -> acceptance_test"
+    assert perf["urls"] == ["https://ex.test/p/1"]
+    assert "affected_surfaces" not in perf["candidate_finding"], \
+        "REF-PERF-RISK declares no catalog surface default; none must be invented"
+    ne = {n["check_id"] for n in frag.get("not_evaluated", [])}
+    assert "REF-OVERLAY-BLOCK" in ne, "an explicit not_evaluated verdict is honoured"
+    assert "REF-ANSWER-NOT-CONFIRMED" in ne, \
+        "a catalog check with no verdict must be not_evaluated - silence is never a pass"
+    # a check that DOES declare surfaces gets them filled in from the catalog
+    v2 = {"skill_id": "representation-parity-audit", "verdicts": [
+        {"check": "REP-KEY-FACT-LOSS", "gate": "finding", "severity": "high",
+         "confidence": "high", "title": "Key facts absent from the raw response",
+         "evidence": "0/8 pages state the price in the raw HTML.",
+         "fix": "Server-render the price.", "verify": "curl shows the price."}]}
+    p2 = os.path.join(tmp, "v2.json")
+    with open(p2, "w", encoding="utf-8") as fh:
+        json.dump(v2, fh)
+    out2 = os.path.join(tmp, "frag2.json")
+    proc2 = subprocess.run(
+        [sys.executable, os.path.join(ORCH, "scripts", "write_fragment.py"),
+         "--verdicts", "--in", p2, "--out", out2], capture_output=True, text=True)
+    assert proc2.returncode == 0, proc2.stdout + proc2.stderr
+    f2 = load(out2)
+    jsonschema.Draft7Validator(frag_schema).validate(f2)
+    kfl = next(r for r in f2["results"] if r["check_id"] == "REP-KEY-FACT-LOSS")
+    assert kfl["candidate_finding"]["affected_surfaces"] == [
+        "chatgpt_search", "perplexity_retrieval", "claude_search"], \
+        "affected_surfaces defaults from the catalog when the check declares them"
+    print("write_fragment --verdicts: assembly, catalog defaults, silence-is-not-a-pass: OK")
+
+
 def main():
     frag_schema = load(os.path.join(REFS, "finding_fragment.json"))
     out_schema = load(os.path.join(REFS, "output_schema.json"))
@@ -164,6 +236,7 @@ def main():
     print("routing + arithmetic + catalog join + acceptance_test preservation: OK")
 
     check_build_passages(exc_schema)
+    check_verdicts_mode(frag_schema)
     print("G1: PASS")
 
 

@@ -39,7 +39,7 @@
         "budget_chars": {
           "type": "integer",
           "minimum": 1,
-          "description": "total excerpt budget for this skill's input file"
+          "description": "character budget for main_content_excerpts ONLY - not the size of this file, which also carries heading trees, claim subsets, anchorable runs and the extras contract"
         },
         "generated_at": {
           "type": "string",
@@ -63,6 +63,10 @@
           "type": "object",
           "description": "per-skill additions: referral-experience <- probes subset (soft_404, redirect_path_preservation) plus the passages_checked results; freshness-consistency <- sitemap lastmod summary + claim_index across pages; answer-coverage <- nothing extra; offsite-visibility <- the prompt set (written by the --passages post-step)",
           "additionalProperties": true
+        },
+        "file_chars": {
+          "type": "integer",
+          "description": "actual serialized size of this excerpt file, so a reader can tell in advance whether it fits one read"
         }
       }
     },
@@ -231,7 +235,7 @@
         },
         "anchorable_runs": {
           "type": "array",
-          "description": "Extraction blocks a passage can be cut from as ONE contiguous run. Draw build_passages.py anchors from inside these: an anchor that is not inside a single run cannot resolve. A short list is itself evidence that commercial facts are stated in fragments (pair with REP-*).",
+          "description": "Extraction runs UNIQUE to this page that a passage can be cut from as one contiguous run. Runs shared with other sampled pages are hoisted to extras.shared_runs instead of repeated here. Draw build_passages.py anchors from inside one of these (or one shared run): an anchor not inside a single run cannot resolve. A capped sample, not the complete set - a shorter unlisted run still anchors. A short list is itself evidence that facts are stated in fragments (pair with REP-*).",
           "items": {
             "type": "object",
             "required": [

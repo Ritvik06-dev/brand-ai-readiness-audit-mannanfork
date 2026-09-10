@@ -620,11 +620,14 @@ def _human_summary(site, findings, needs_verification, not_evaluated):
     lines = ["Audit of %s: %d finding(s). Fix in this order:" % (site, len(findings))]
     for i, f in enumerate(findings, 1):
         action = f["suggested_action"]
-        bits = ["effort: %s" % action.get("effort", "?")]
+        bits = []
+        if action.get("effort"):
+            bits.append("effort: %s" % action["effort"])
         if action.get("owner"):
             bits.append("owner: %s" % action["owner"])
         lines.append("%d. [%s] %s" % (i, f["severity"].upper(), f["title"]))
-        lines.append("   Fix: %s (%s)" % (action["summary"], ", ".join(bits)))
+        lines.append("   Fix: %s%s" % (action["summary"],
+                                       (" (%s)" % ", ".join(bits)) if bits else ""))
         if action.get("acceptance_test"):
             lines.append("   Verify: %s" % action["acceptance_test"])
     if needs_verification:

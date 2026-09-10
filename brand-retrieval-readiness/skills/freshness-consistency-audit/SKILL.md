@@ -101,11 +101,20 @@ conflicts are the measurable, on-site form of that failure.
 
 - The finding fragment to the orchestrator's `audit/findings/` path, shaped by
   `../audit-orchestrator/references/finding_fragment.json`. Never assign `F-` ids; the
-  orchestrator does. One write path, no alternatives: write your fragment
-  to a draft file, then run
-  `python3 <orchestrator>/scripts/write_fragment.py --in <draft> --out <final path>`.
-  It validates against `finding_fragment.json`, applies safe fixes (duplicate results,
-  unknown keys), prints one line, and only then is the fragment handed off. Do not run
+  orchestrator does. One write path, no alternatives, and you never hand-write
+  nested fragment JSON. Write a **verdicts file**: one flat entry per check, `check` and
+  `gate` required, plus prose only where the gate is `finding`
+  (`severity`, `confidence`, `title`, `evidence`, `why`, `fix`, `verify`, `owner`,
+  `effort`, `urls`). Then run
+
+  `python3 <orchestrator>/scripts/write_fragment.py --verdicts --in <verdicts> --excerpt <this skill's excerpt> --out <final path>`
+
+  It assembles the nested result objects, merges in the observations the collector already
+  measured (`extras.measured`), fills `evidence_quality` and `affected_surfaces` from the
+  check catalog, validates, and prints one line. Never retype a measured number or a
+  relay's evidence sentence: cite it by gating the check and let the script carry it.
+  Any catalog check you submit no verdict for is recorded `not_evaluated` — silence is
+  never a pass, so submit a verdict for every check you actually judged. Do not run
   `validate_fragment.py` yourself and do not write a per-run builder script; the merge
   salvages anything still invalid. Report which pages supplied each side of every conflict so the
   remediation can name the source of truth.

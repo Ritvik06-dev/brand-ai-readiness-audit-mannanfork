@@ -1022,6 +1022,10 @@
           },
           "note": {
             "type": "string"
+          },
+          "file_chars": {
+            "type": "integer",
+            "description": "serialized size of that excerpt file, so a reader knows before opening it whether it fits a single read"
           }
         }
       }

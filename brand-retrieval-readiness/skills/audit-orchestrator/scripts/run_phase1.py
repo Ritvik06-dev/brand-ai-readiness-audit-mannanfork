@@ -131,6 +131,7 @@ def inject_extras(out_dir, frag_paths):
                         "the ANS-BOILERPLATE-DROWNING gate is shared-preamble pages >= half "
                         "the sample AND median offset > 1500 chars"}
         try:
+            exc["file_chars"] = len(json.dumps(exc, indent=1, ensure_ascii=False))
             json.dump(exc, open(path, "w"), indent=1, ensure_ascii=False)
         except OSError:
             pass
