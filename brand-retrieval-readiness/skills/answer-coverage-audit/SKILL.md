@@ -123,11 +123,17 @@ gap between them is where the findings and the opportunities live.
      excerpt's `coverage_appendix` (headings, nav labels) still shows a page that would
      carry the answer. Decide between the two cases in one sentence; do not re-litigate.
    - **Sampled-page silence is evidence, not a sampling gap.** The question's source does
-     not decide this — the page's claim does. If a sampled page's section-level headings in
-     main content (h2/h3 naming the question's subject — a `PROGRAM FEES` heading counts;
-     nav, carousel, or announcement headings do not) claim the territory and carry no
-     answering passage → finding (ANS-QUESTION-UNANSWERED). A market-derived question no
-     sampled page claims anywhere → `opportunities[]`. If the missing section is plausibly
+     not decide this — the page's claim does. A page **claims a subject's territory** when
+     its main content transacts in that subject by any of: a section-level heading naming it
+     (`PROGRAM FEES`); a form control or selector for it (a size selector claims sizing, a
+     plan toggle claims pricing); or a sentence that names it and defers
+     (`see the size chart`, `shipping calculated at checkout`). Chrome does not count: nav,
+     carousel, announcement bars and footers. **Do not require a heading** — a page whose only
+     sizing signal is an XS-2XL selector plus "swipe for the size chart" has unmistakably
+     claimed sizing, and filing that as unmet demand hides the strongest finding on the site.
+     Territory claimed and no answering passage → finding (ANS-QUESTION-UNANSWERED). A
+     market-derived question no sampled page claims in any of those three ways →
+     `opportunities[]`. If the missing section is plausibly
      collapsed-by-default DOM content, that is REF-COLLAPSED-ANSWER / representation's case
      — name the paired check, do not double-report. If the answer plausibly lives on an
      unsampled page, say so in the evidence sentence — it scopes the finding, it does not
@@ -186,10 +192,25 @@ gap between them is where the findings and the opportunities live.
   `python3 <orchestrator>/scripts/build_passages.py --draft <draft> --excerpt audit/excerpts/answer-coverage-audit.json --snapshot audit/snapshot.json --out audit/passages.json`
   for the question set (fix only its FAIL lines, then re-run that one command), and
   `python3 <orchestrator>/scripts/write_fragment.py --verdicts --in <verdicts> --excerpt audit/excerpts/answer-coverage-audit.json --out audit/findings/answer-coverage-audit.json`
-  for the fragment. You never hand-write nested fragment JSON: the verdicts file is one flat
-  entry per check, `check` and `gate` required, prose only where the gate is `finding`
-  (`severity`, `confidence`, `title`, `evidence`, `why`, `fix`, `verify`, `owner`, `effort`,
-  `urls`), plus a top-level `opportunities` array. The script assembles the nested results,
+  for the fragment. You never hand-write nested fragment JSON. The verdicts file's top-level
+  key is `verdicts`, and `skill_id` is required:
+
+  ```json
+  {"skill_id": "answer-coverage-audit",
+   "verdicts": [
+     {"check": "ANS-QUALIFIER-DETACHED", "gate": "pass"},
+     {"check": "ANS-COMPARISON-UNREADABLE", "gate": "not_evaluated",
+      "reason": "no competing-option surface in the sample"},
+     {"check": "ANS-QUESTION-UNANSWERED", "gate": "finding",
+      "severity": "high", "confidence": "medium",
+      "title": "<pattern-shaped title>", "evidence": "<k/n with a quote>",
+      "why": "...", "fix": "...", "verify": "...", "owner": "...", "effort": "medium",
+      "urls": ["https://example.com/p/1"], "observations": {"questions_total": 6}}],
+   "opportunities": [{"title": "...", "rationale": "...", "priority": "medium"}]}
+  ```
+
+  Every field except `check` and `gate` is optional; `reason` is for `not_evaluated`, and
+  `observations` merges on top of the collector's measured values. The script assembles the nested results,
   merges in the collector's measured observations, fills `evidence_quality` and
   `affected_surfaces` from the catalog, and records any ANS check you submit no verdict for
   as `not_evaluated` — silence is never a pass. Do not run `validate_fragment.py` yourself,

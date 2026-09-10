@@ -39,9 +39,11 @@ visitor, judged here because they land on the citation).
   measured there: quote it, never recount it, never open the snapshot to derive it. `extras.checks` carries the check templates;
   `extras.fragment_shape` the fragment keys; `extras.phase1_findings` lists the phase-1
   findings (pairing with REP-* without re-reading fragments).
-- `audit/passages_checked.json` — written by the `--passages` post-step: per candidate answer
-  passage, whether it exists as one contiguous visible text run (`contiguous`) and why not
-  (`note`: "price split across spans", "inside collapsed details").
+- `audit/passages_checked.json` — written by the `--passages` post-step. **Its array key is
+  `results`, not `questions`** (that is the key in `passages.json`, its input). Each row: the
+  `question_id`, whether the passage exists as one contiguous visible text run (`contiguous`),
+  `first_window`, and why not (`note`). A `note` saying the anchor was never pinned is a
+  quoting/fragmentation signal, never evidence the question is unanswered.
 - Runtime contract: judge from the excerpt and `passages_checked` only, in a single pass, and
   write the fragment once; emit partial findings with `not_evaluated` rather than overrun. If
   a read truncates, continue from the truncation offset — do not restart or re-open.
@@ -127,10 +129,26 @@ visitor, judged here because they land on the citation).
 - The finding fragment to the orchestrator's `audit/findings/` path, shaped by
   `../audit-orchestrator/references/finding_fragment.json`. Never assign `F-` ids; the
   orchestrator does. One write path, no alternatives, and you never hand-write
-  nested fragment JSON. Write a **verdicts file**: one flat entry per check, `check` and
-  `gate` required, plus prose only where the gate is `finding`
-  (`severity`, `confidence`, `title`, `evidence`, `why`, `fix`, `verify`, `owner`,
-  `effort`, `urls`). Then run
+  nested fragment JSON. Write a **verdicts file** in exactly this shape — the top-level key
+  is `verdicts`, and `skill_id` is required:
+
+  ```json
+  {"skill_id": "<this skill's id>",
+   "verdicts": [
+     {"check": "XXX-PASSING-CHECK", "gate": "pass"},
+     {"check": "XXX-SKIPPED-CHECK", "gate": "not_evaluated", "reason": "why not judged"},
+     {"check": "XXX-FAILING-CHECK", "gate": "finding",
+      "severity": "medium", "confidence": "medium",
+      "title": "<pattern-shaped title>", "evidence": "<counts with denominators + quote>",
+      "why": "<why it matters>", "fix": "<what to change>", "verify": "<acceptance test>",
+      "owner": "<who>", "effort": "small",
+      "urls": ["https://example.com/page"],
+      "observations": {"any_extra_measured_field": 1}}]}
+  ```
+
+  Every field except `check` and `gate` is optional. `reason` is for `not_evaluated`;
+  `observations` merges on top of the collector's measured values and is where recorded
+  probe rows go. Then run
 
   `python3 <orchestrator>/scripts/write_fragment.py --verdicts --in <verdicts> --excerpt <this skill's excerpt> --out <final path>`
 

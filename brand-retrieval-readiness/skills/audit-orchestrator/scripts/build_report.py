@@ -490,6 +490,18 @@ def main():
     print("build_report: report written to %s (%d findings, %d needs_verification,"
           " %d not_evaluated)" % (args.out, len(ordered), len(needs_verification),
                                   len(not_evaluated)))
+    # Everything step 7 must state in chat, printed here. Without audit_status and
+    # coverage on stdout the emit step had to reopen report.json for one field,
+    # against its own instruction not to.
+    def _n(v):
+        return "-" if v is None else v
+    print("build_report: audit_status=%s | specialists %s/%s | pages %s/%s sampled"
+          " | checks passed %s | severity %dC/%dH/%dM/%dL | opportunities %d"
+          % (report["audit_status"], _n(coverage.get("specialists_resolved")),
+             _n(coverage.get("specialists_requested")), _n(coverage.get("pages_selected")),
+             _n(coverage.get("pages_discovered")), _n(coverage.get("checks_passed_count")),
+             summary["critical"], summary["high"], summary["medium"], summary["low"],
+             len(opportunities)))
 
 
 FORBIDDEN_PATTERNS = [

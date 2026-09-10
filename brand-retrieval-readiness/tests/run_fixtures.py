@@ -60,7 +60,8 @@ def unit_checks():
     """No-server checks: confusable folding, --passages edge cases, --fix."""
     fails = []
     sys.path.insert(0, os.path.join(ORCH, "scripts"))
-    from collect_snapshot import _fold_confusables, run_passages, build_excerpts, FRAGMENT_SHAPE
+    from collect_snapshot import (_fold_confusables, run_passages, build_excerpts,
+                              FRAGMENT_SHAPE, FRAGMENT_SHAPE_FULL)
     from types import SimpleNamespace
     if _fold_confusables("2026–27 ‘quoted’\u00a0x") != "2026-27 'quoted' x":
         fails.append("fold confusables mismatch")
@@ -215,7 +216,9 @@ def unit_checks():
         fails.append("screen_windows wrong: %r" % (w,))
     fs = json.load(open(os.path.join(ORCH, "references", "finding_fragment.json")))
     ex = json.load(open(os.path.join(ORCH, "references", "excerpts_schema.json")))
-    shape = FRAGMENT_SHAPE
+    # The enum tables live in FRAGMENT_SHAPE_FULL (the standalone/degraded
+    # contract); excerpts now ship the verdicts contract instead.
+    shape = FRAGMENT_SHAPE_FULL
     def _enum(*path):
         node = fs
         for part in path:
@@ -244,6 +247,12 @@ def unit_checks():
             fails.append("shape %s drifted from schema: %r" % (key, sorted(shape.get(key, []))))
     if shape.get("passages_required") != ["question_id", "question", "source", "expected_page"]:
         fails.append("shape passages_required drifted")
+    # what the excerpts DO ship: the verdicts contract write_fragment accepts
+    vs = FRAGMENT_SHAPE.get("verdicts_file_shape", {})
+    if "verdicts" not in vs or FRAGMENT_SHAPE.get("required_per_verdict") != ["check", "gate"]:
+        fails.append("excerpt fragment_shape no longer states the verdicts contract")
+    if "verdicts" not in (FRAGMENT_SHAPE.get("how_to_write") or ""):
+        fails.append("excerpt fragment_shape does not name the verdicts writer")
     ph_server, ph_url = start({
         "robots": {"status": 404, "body": ""},
         "pages": {"/": {"status": 200, "headers": {},

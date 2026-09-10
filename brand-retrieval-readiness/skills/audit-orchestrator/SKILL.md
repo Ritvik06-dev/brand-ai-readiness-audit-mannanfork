@@ -55,7 +55,9 @@ from there with explicit paths.
   wall-clock and elapsed seconds; the `--passages` post-step prints seconds elapsed since the
   snapshot. When the post-step reports > 210 s (3.5 of the 5 minutes), shed off-site probes:
   every OFF check becomes `not_evaluated` ("deadline shed") and the remaining judgments finish
-  in one pass each.
+  in one pass each. **That printed number is the gate, read once, and it does not get
+  re-evaluated later** — if it said 178 s, off-site probes run even when more time has passed
+  by the time you reach them. One clock, read once, no re-estimating.
 - **Model turns:** judge each specialist from its excerpt in a single pass and write the
   fragment once; run the report build once. Emit partial findings with `not_evaluated`
   rather than overrun — a valid partial report always beats an overrun. Do not re-read
@@ -82,9 +84,10 @@ from there with explicit paths.
    explicitly declared a local test fixture, in which case pass `--allow-private`. Refuse
    authenticated-area or site-altering requests entirely.
 
-2. **Declare capabilities; the collector proposes the site type.** Declare only capabilities
-   this run will actually exercise as comma-separated flags — declare `subagents` when the
-   harness exposes them, because the dispatch step fans out with them. Scripts take declared
+2. **Declare capabilities; the collector proposes the site type.** Declare the capabilities this
+   harness exposes, as comma-separated flags — that is an environment fact, not a plan, so
+   declare `subagents` whenever the harness has them and let the dispatch step decide how to
+   use them. Declare nothing the harness lacks. Scripts take declared
    facts as flags and never probe for tools.
    **Do not classify the site first.** You have not fetched it yet, and a guess from the bare
    URL costs a second collection when the pages contradict it. Pass `--site-type auto` (the
@@ -121,13 +124,13 @@ from there with explicit paths.
    is absent, run the three scripts individually with
    `--snapshot ./audit/snapshot.json --out ./audit/findings/<skill-id>.json` (script named in
    each skill's SKILL.md).
-   Then **complete semantic gates**: reopen the entity fragment once (fragments are small JSON —
-   this is not the snapshot) and finish `ENT-AMBIGUOUS-NAME` — the one check whose prepared
-   gate is a model judgment: per that skill's SKILL.md, either promote it to a finding with
-   quoted evidence or leave it as a pass, and record the verdict by adding
-   `model_completion: "<1-3 sentence reason>"` inside that result's `observations`. Other
-   `gate: "pass"` results carrying `evidence_quality: "semantic-judgment"` are prepared
-   passes — leave them untouched. Write the fragment back before step 6.
+   Then **complete the one semantic gate**: `ENT-AMBIGUOUS-NAME`. Its result carries a
+   `prepared_gate` string stating exactly what to decide — read that, decide, and record it
+   with one command. Never hand-edit the fragment:
+   `python3 <orchestrator>/scripts/write_fragment.py --in ./audit/findings/entity-consistency-audit.json --complete-gate ENT-AMBIGUOUS-NAME --gate pass|not_evaluated --reason "<1-3 sentences>"`
+   (To promote it to a finding instead, submit it through `--verdicts` with the finding
+   prose.) Other `gate: "pass"` results carrying `evidence_quality: "semantic-judgment"` are
+   prepared passes — leave them untouched.
 
 5. **Judgment specialists** (in manifest order). Each writes its fragment through
    `write_fragment.py`, which validates on the way out; the merge salvages anything still
@@ -137,7 +140,8 @@ from there with explicit paths.
    `severity_facts` — so do not go looking for schemas or catalogs beyond the two files.
    Two files per specialist, read once each, then author: nothing else. Quote only
    `check_id`s from the excerpt's `extras.checks` — ids outside the catalog do not exist.
-   Remove helper/scratch scripts from the working directory before step 6.
+   Remove helper/scratch scripts from the working directory before step 6. Verdicts files and
+   the passages draft are not scratch — they are the audit's judgment inputs. Keep them.
    - `answer-coverage-audit`: read `audit/excerpts/answer-coverage-audit.json` ONCE, follow its
      SKILL.md, write `audit/findings/answer-coverage-audit.json` AND `audit/passages.json`
      (questions from two sources: `site-derived` and `market-derived`; market-derived questions

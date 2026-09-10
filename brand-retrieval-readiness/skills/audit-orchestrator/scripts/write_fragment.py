@@ -144,7 +144,20 @@ def assemble_from_verdicts(verdicts_doc, excerpt, catalog, notes):
     collector already measured - is assembled here. Hand-typing those was ~70%
     of a judgment specialist's wall clock and the only source of schema errors.
     """
+    # A mis-keyed verdicts file ({"checks": [...]}) used to assemble silently into
+    # a fragment where every check was not_evaluated - a wrong answer that looked
+    # like a clean run. Refuse instead, and name the key that was found.
+    if not isinstance(verdicts_doc.get("verdicts"), list):
+        wrong = [k for k in ("checks", "results", "verdict", "entries", "gates")
+                 if isinstance(verdicts_doc.get(k), list)]
+        raise ValueError(
+            "verdicts file has no top-level \"verdicts\" array%s. Expected shape:\n"
+            '  {"skill_id": "<this skill>", "verdicts": [{"check": "X-Y", "gate": "pass"}]}'
+            % (" (found %r instead)" % wrong[0] if wrong else ""))
     skill_id = verdicts_doc.get("skill_id") or (excerpt or {}).get("skill_id")
+    if not skill_id:
+        raise ValueError('verdicts file has no top-level "skill_id" and no --excerpt '
+                         "to take it from")
     by_check = {c["check_id"]: c for c in (catalog or {}).get("checks", [])
                 if c.get("skill_id") == skill_id}
     measured = ((excerpt or {}).get("extras") or {}).get("measured") or {}
@@ -225,6 +238,12 @@ def main(argv=None):
                     help="--in is a flat verdicts file (one line per check); assemble the "
                          "nested fragment from it plus the excerpt's measured observations")
     ap.add_argument("--excerpt", help="that skill's excerpt, for --verdicts")
+    ap.add_argument("--complete-gate", metavar="CHECK_ID",
+                    help="finish one prepared semantic gate in an existing fragment "
+                         "(e.g. ENT-AMBIGUOUS-NAME) instead of assembling a new one")
+    ap.add_argument("--gate", choices=("finding", "pass", "not_evaluated"),
+                    help="the verdict for --complete-gate")
+    ap.add_argument("--reason", help="1-3 sentences recorded as observations.model_completion")
     ap.add_argument("--out", dest="outfile")
     ap.add_argument("--schema", dest="schema")
     args = ap.parse_args(argv)
@@ -235,6 +254,30 @@ def main(argv=None):
         print("INVALID: unreadable draft (%s)" % e)
         return 1
     notes = []
+    if args.complete_gate:
+        # The one gate the orchestrator asks the model to finish by hand. Without
+        # this it was the only nested-JSON hand-edit in a marketplace whose whole
+        # design principle is that a script owns the shape.
+        if not args.gate or not args.reason:
+            print("INVALID: --complete-gate needs both --gate and --reason")
+            return 1
+        target = None
+        for r in frag.get("results", []):
+            if r.get("check_id") == args.complete_gate:
+                target = r
+                break
+        if target is None:
+            print("INVALID: %s is not a result in %s" % (args.complete_gate, args.infile))
+            return 1
+        target["gate"] = args.gate
+        target.setdefault("observations", {})["model_completion"] = args.reason
+        if args.gate == "finding" and "candidate_finding" not in target:
+            print("INVALID: promoting %s to a finding needs a candidate_finding; "
+                  "use --verdicts for that check instead" % args.complete_gate)
+            return 1
+        if args.gate != "finding":
+            target.pop("candidate_finding", None)
+        notes.append("%s completed as %s" % (args.complete_gate, args.gate))
     if args.verdicts:
         excerpt = None
         if args.excerpt:
@@ -250,7 +293,11 @@ def main(argv=None):
                 catalog = json.load(open(cpath, encoding="utf-8"))
             except (OSError, ValueError):
                 catalog = None
-        frag = assemble_from_verdicts(frag, excerpt, catalog, notes)
+        try:
+            frag = assemble_from_verdicts(frag, excerpt, catalog, notes)
+        except ValueError as e:
+            print("INVALID: %s" % e)
+            return 1
     if not isinstance(frag, dict) or not frag.get("skill_id"):
         print("INVALID: draft has no skill_id")
         return 1

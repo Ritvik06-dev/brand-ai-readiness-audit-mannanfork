@@ -102,10 +102,26 @@ conflicts are the measurable, on-site form of that failure.
 - The finding fragment to the orchestrator's `audit/findings/` path, shaped by
   `../audit-orchestrator/references/finding_fragment.json`. Never assign `F-` ids; the
   orchestrator does. One write path, no alternatives, and you never hand-write
-  nested fragment JSON. Write a **verdicts file**: one flat entry per check, `check` and
-  `gate` required, plus prose only where the gate is `finding`
-  (`severity`, `confidence`, `title`, `evidence`, `why`, `fix`, `verify`, `owner`,
-  `effort`, `urls`). Then run
+  nested fragment JSON. Write a **verdicts file** in exactly this shape — the top-level key
+  is `verdicts`, and `skill_id` is required:
+
+  ```json
+  {"skill_id": "<this skill's id>",
+   "verdicts": [
+     {"check": "XXX-PASSING-CHECK", "gate": "pass"},
+     {"check": "XXX-SKIPPED-CHECK", "gate": "not_evaluated", "reason": "why not judged"},
+     {"check": "XXX-FAILING-CHECK", "gate": "finding",
+      "severity": "medium", "confidence": "medium",
+      "title": "<pattern-shaped title>", "evidence": "<counts with denominators + quote>",
+      "why": "<why it matters>", "fix": "<what to change>", "verify": "<acceptance test>",
+      "owner": "<who>", "effort": "small",
+      "urls": ["https://example.com/page"],
+      "observations": {"any_extra_measured_field": 1}}]}
+  ```
+
+  Every field except `check` and `gate` is optional. `reason` is for `not_evaluated`;
+  `observations` merges on top of the collector's measured values and is where recorded
+  probe rows go. Then run
 
   `python3 <orchestrator>/scripts/write_fragment.py --verdicts --in <verdicts> --excerpt <this skill's excerpt> --out <final path>`
 

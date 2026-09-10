@@ -938,7 +938,7 @@ def resolve_external_presence(fetcher, pages, site_host):
     return out
 
 
-FRAGMENT_SHAPE = {
+FRAGMENT_SHAPE_FULL = {
     "required_top_level": ["skill_id", "mode", "results"],
     "mode_enum": ["snapshot", "url"],
     "mode_note": "composed runs use mode snapshot; standalone URL-mode runs use url",
@@ -1016,9 +1016,16 @@ def checks_for(catalog, skill_id):
             if c.get("skill_id") == skill_id]
 
 
-def cap_claims(claims):
-    """Collapse runs of identical (type, value) claims (e.g. a date strip)
-    into one row with a count; keep the first quote plus sample locations."""
+def cap_claims(claims, per_type=6):
+    """Collapse identical (type, value) runs, then cap DISTINCT values per type.
+
+    Collapsing alone left a catalogue page shipping every distinct price: on one
+    ecommerce sample claim_index_subset was 35 KB, a third of the excerpt and its
+    single largest block, for a judgment that needs the shape of the claims and
+    not all two hundred of them. A per-type sample plus the distinct count keeps
+    conflict detection intact - cross-page adjudication reads extras.claim_matrix,
+    which groups over the whole sample.
+    """
     grouped, order = {}, []
     for c in claims or []:
         key = (c.get("type"), c.get("value"))
@@ -1026,18 +1033,39 @@ def cap_claims(claims):
             grouped[key] = []
             order.append(key)
         grouped[key].append(c)
-    out = []
+    out, kept_by_type, dropped_by_type = [], {}, {}
+    page_url = (claims or [{}])[0].get("location")
     for key in order:
         rows = grouped[key]
+        ctype = key[0]
+        if kept_by_type.get(ctype, 0) >= per_type:
+            dropped_by_type[ctype] = dropped_by_type.get(ctype, 0) + 1
+            continue
+        kept_by_type[ctype] = kept_by_type.get(ctype, 0) + 1
         if len(rows) > 5:
             first = dict(rows[0])
             first["count"] = len(rows)
-            locs = [r.get("location") for r in rows[1:4] if r.get("location")]
+            locs = [r.get("location") for r in rows[1:4]
+                    if r.get("location") and r.get("location") != page_url]
             if locs:
                 first["sample_locations"] = locs
             out.append(first)
         else:
-            out.extend(rows)
+            out.extend(dict(r) for r in rows)
+    # Trim per row: the quote is unbounded and `location` repeats the page URL
+    # the row already sits under. At ~218 bytes a row this was the excerpt's
+    # largest block on a catalogue site.
+    for r in out:
+        if r.get("quote") and len(r["quote"]) > 140:
+            r["quote"] = r["quote"][:137] + "..."
+        if r.get("location") == page_url:
+            r.pop("location", None)
+    for ctype, n in sorted(dropped_by_type.items()):
+        out.append({"type": ctype,
+                    "value": "[+%d more distinct %s values on this page]" % (n, ctype),
+                    "quote": "sample cap: %d distinct %s values are listed above; %d more "
+                             "exist on this page and are not quoted" % (per_type, ctype, n),
+                    "location": "sample cap"})
     return out
 
 
@@ -1239,6 +1267,40 @@ def anchorable_runs(pages, per_page=10, min_chars=12, max_chars=600, budget=9000
     return per_page_out, shared
 
 
+# Judgment skills write a VERDICTS file, not a fragment: write_fragment.py owns
+# the nested shape. Shipping the full enum table in all four excerpts cost ~3 KB
+# each for a contract none of them authors against any more. The verdict contract
+# is what they need; the full shape stays available in finding_fragment.json for
+# standalone and degraded runs.
+FRAGMENT_SHAPE = {
+    "how_to_write": ("Do NOT author fragment JSON. Write a verdicts file and run "
+                     "write_fragment.py --verdicts --in <verdicts> --excerpt <this file> "
+                     "--out audit/findings/<skill_id>.json"),
+    "verdicts_file_shape": {
+        "skill_id": "<this skill's id>",
+        "verdicts": [{"check": "<check_id from extras.checks>",
+                      "gate": "finding | pass | not_evaluated",
+                      "reason": "(not_evaluated only) why it was not judged",
+                      "severity": "critical | high | medium | low  (finding only)",
+                      "confidence": "high | medium | low  (finding only)",
+                      "title": "(finding only) pattern-shaped, per the check's template",
+                      "evidence": "(finding only) counts with denominators plus a quote",
+                      "why": "(finding only) why it matters",
+                      "fix": "(finding only) what to change",
+                      "verify": "(finding only) the acceptance test",
+                      "owner": "(finding only)", "effort": "small | medium | large",
+                      "urls": "(finding only) affected page URLs",
+                      "observations": "extra measured values; merges over extras.measured"}],
+        "opportunities": [{"title": "", "rationale": "", "priority": "medium"}],
+    },
+    "required_per_verdict": ["check", "gate"],
+    "silence_rule": ("a catalog check with no verdict is recorded not_evaluated - "
+                     "silence is never a pass"),
+    "never": ("never assign F- ids, never write affected_urls (use urls), never retype a "
+              "number already in extras.measured for a pass"),
+}
+
+
 def build_excerpts(pages, sitemap_summary, probes, catalog=None, corroboration=None,
                    site_type=""):
     # main_content_excerpts budget only. answer-coverage was 24000: anchorable_runs
@@ -1263,9 +1325,11 @@ def build_excerpts(pages, sitemap_summary, probes, catalog=None, corroboration=N
         return out
 
     for p in pages:
+        # cap the run, then the whole tree: alternating levels defeat the sibling
+        # cap on a deep catalogue page, where the tree reached 18 KB per excerpt.
         heading_tree = cap_sibling_headings(
             [{"level": h["level"], "text": h["text"], "id": h["id"]}
-             for h in p["headings"]][:40])
+             for h in p["headings"]][:40])[:20]
         sections = json.loads(json.dumps(p["_sections"])) if p.get("_sections") else []
         excerpt_locs = [{"char_offset": s["char_offset"], "text": s["text"][:1500],
                          "location": ("under %s" % s["heading"]) if s["heading"] else "top of page"}
@@ -2186,10 +2250,10 @@ def run_passages(args):
     offsite = {
         "kind": "excerpt", "skill_id": "offsite-visibility-audit", "budget_chars": 8000,
         "generated_at": _now(),
-        "pages": [{"url": q.get("expected_page"), "page_class": None, "title": None,
-                   "heading_tree": [], "main_content_excerpts": [],
-                   "claim_index_subset": []}
-                  for q in passages.get("questions", [])][:8],
+        # No pages: offsite reasons over the prompt set and external_presence, not
+        # page bodies. This array was eight objects of nulls that a reader had to
+        # scroll past for nothing.
+        "pages": [],
         "extras": {"prompt_set": [{"question_id": q["question_id"],
                                     "question": q["question"],
                                     "source": q.get("source", "site-derived")}
