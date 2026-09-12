@@ -27,8 +27,10 @@ import os
 import re
 import socket
 import sys
+import threading
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from html.parser import HTMLParser
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urljoin, urlparse, urlunparse
@@ -122,17 +124,24 @@ class Fetcher:
         self.timeout = per_request_timeout
         self.requests = 0
         self._ok_hosts = {}
+        # fetch_many runs fetches on a small pool; these two are the only shared
+        # mutable state, so they take a lock. Everything else on a fetch is local.
+        self._lock = threading.Lock()
 
     def remaining(self):
         return self.deadline_ts - time.time()
 
     def _check_host(self, host, port):
         key = (host, port)
-        if key in self._ok_hosts:
-            return
+        with self._lock:
+            if key in self._ok_hosts:
+                return
         if self.allow_private:
-            self._ok_hosts[key] = True
+            with self._lock:
+                self._ok_hosts[key] = True
             return
+        # DNS resolution stays outside the lock: it is slow, and two threads
+        # racing on the same new host simply both validate it, which is correct.
         try:
             infos = socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)
         except OSError as e:
@@ -142,7 +151,8 @@ class Fetcher:
             if (ip.is_private or ip.is_loopback or ip.is_link_local
                     or ip.is_reserved or ip.is_multicast or ip.is_unspecified):
                 raise ValueError("refusing non-public destination %s (%s)" % (host, ip))
-        self._ok_hosts[key] = True
+        with self._lock:
+            self._ok_hosts[key] = True
 
     def fetch(self, url, ua=AUDITOR_UA, method="GET", max_bytes=PAGE_BYTES):
         """One logical fetch following <=MAX_HOPS hops manually. Never raises
@@ -176,7 +186,8 @@ class Fetcher:
                 "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.5",
                 "Accept-Encoding": "gzip",
             })
-            self.requests += 1
+            with self._lock:
+                self.requests += 1
             try:
                 resp = _OPENER.open(req, timeout=self.timeout)
                 status = resp.status
@@ -831,6 +842,30 @@ def probe_redirects(fetcher, deep_path):
                     "path_preserved": final_path == parts.path,
                     "variant_ok": status < 400})
     return out
+
+
+def fetch_many(fetcher, urls, concurrency, **kw):
+    """Fetch urls on a small pool; return results in the SAME order as `urls`.
+
+    Only the waiting overlaps. Results are reassembled in input order and parsed
+    serially afterwards, so the snapshot is byte-identical to a serial run - the
+    sampling, the page order and every derived count are unchanged. concurrency=1
+    is exactly the old serial path.
+
+    A URL is skipped (None) once the deadline is close, matching the serial
+    loop's own guard rather than firing a burst of doomed requests at it.
+    """
+    if concurrency <= 1 or len(urls) <= 1:
+        return [fetcher.fetch(u, **kw) if fetcher.remaining() >= 3.0 else None
+                for u in urls]
+
+    def one(u):
+        if fetcher.remaining() < 3.0:
+            return None
+        return fetcher.fetch(u, **kw)
+
+    with ThreadPoolExecutor(max_workers=min(concurrency, len(urls))) as pool:
+        return list(pool.map(one, urls))
 
 
 def redirect_relay(redirects):
@@ -1795,7 +1830,7 @@ def _blank_page(url, page_class, timing_ms, content_type=None):
         "claim_index": [], "_structured_dates": [], "_sections": []}
 
 
-def probe_link_rot(fetcher, pages, selected_urls, robot_rows, site_host):
+def probe_link_rot(fetcher, pages, selected_urls, robot_rows, site_host, concurrency=1):
     """Sample <=5 unfetched same-origin links (rot hides off the crawled set).
 
     Bounded and deadline-aware; the caller skips when remaining() is low.
@@ -1827,11 +1862,19 @@ def probe_link_rot(fetcher, pages, selected_urls, robot_rows, site_host):
             except Exception:
                 pass
             seen.add(norm)
-            res = fetcher.fetch(href, max_bytes=TINY_BYTES)
-            rows.append({"url": href, "status": res.get("status"),
-                         "error": str(res.get("error") or "")[:120] or None,
+            # Selection first, fetching after: the candidate set and its order are
+            # decided exactly as before, so only the waiting overlaps.
+            rows.append({"url": href, "status": None, "error": None,
                          "source_url": p["requested_url"],
                          "source_class": p.get("page_class")})
+    results = fetch_many(fetcher, [r["url"] for r in rows], concurrency,
+                         max_bytes=TINY_BYTES)
+    for row, res in zip(rows, results):
+        if res is None:
+            row["error"] = "deadline reached before request"
+            continue
+        row["status"] = res.get("status")
+        row["error"] = str(res.get("error") or "")[:120] or None
     return rows
 
 
@@ -1949,11 +1992,11 @@ def run_collect(args):
                          "video_without_transcript": 0},
             "inline_state": {"payload_keys": [], "contrast_strings": []},
             "claim_index": [], "_structured_dates": [], "_sections": []})
-    for u in selected:
-        if fetcher.remaining() < 3.0:
+    captured = fetch_many(fetcher, selected, args.concurrency)
+    for u, res in zip(selected, captured):
+        if res is None:
             notes.append("deadline: stopped page capture early")
             break
-        res = fetcher.fetch(u)
         if (res.get("error") or res.get("status") is None
                 or (res.get("status") or 500) >= 400):
             # a redirect-exhausted chain is ACC-REDIRECT-LOOP evidence - record
@@ -2019,7 +2062,7 @@ def run_collect(args):
     ua_probes = probe_ua(fetcher, base, robot_rows, r_status,
                          home_res.get("status"))
     link_rot = probe_link_rot(fetcher, pages, [p["requested_url"] for p in pages],
-                              robot_rows, parts.netloc)
+                              robot_rows, parts.netloc, args.concurrency)
     external = resolve_external_presence(fetcher, pages, parts.netloc)
 
     marks.append(("probes", time.time()))
@@ -2395,6 +2438,11 @@ def main():
                          "web_fetch,web_search,browser,subagents")
     ap.add_argument("--max-pages", type=int, default=8)
     ap.add_argument("--deadline", type=int, default=120, help="network deadline seconds")
+    ap.add_argument("--concurrency", type=int, default=4,
+                    help="parallel fetches for page capture and link-rot sampling "
+                         "(default 4; 1 restores fully serial fetching). Only the "
+                         "waiting overlaps - results are reassembled in request "
+                         "order, so the snapshot is identical either way.")
     args = ap.parse_args()
 
     if args.passages:
