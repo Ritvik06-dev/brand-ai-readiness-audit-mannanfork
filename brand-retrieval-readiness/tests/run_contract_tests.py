@@ -45,6 +45,92 @@ def excerpt_loc(text):
     return {"location": "main", "char_offset": 0, "text_offset": 0, "text": text}
 
 
+def load_collector():
+    import importlib.util
+    path = os.path.join(ORCH, "scripts", "collect_snapshot.py")
+    spec = importlib.util.spec_from_file_location("collect_snapshot", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def check_fetch_latency_gate():
+    """ACC-FETCH-LATENCY: median not max, and a sample too small to trust.
+
+    Ported from the sibling marketplace's L1-08 with its own guard ("always
+    report the median, never the max") and with the metric relabelled: the
+    collector's timing_ms covers connect + redirect hops + body read, so the
+    sub-second bars a TTFB check would use do not apply here.
+    """
+    import importlib.util
+    path = os.path.join(ROOT, "skills", "access-discovery-audit", "scripts",
+                        "probe_access.py")
+    spec = importlib.util.spec_from_file_location("probe_access", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    def pages(*ms):
+        return [{"requested_url": "https://x.com/%d" % i, "status": 200, "timing_ms": t}
+                for i, t in enumerate(ms)]
+
+    g = mod.check_fetch_latency(pages(300, 320, 340, 9000))
+    assert g["gate"] == "pass", "one slow outlier must not carry the median: %s" % g["gate"]
+
+    g = mod.check_fetch_latency(pages(3000, 3200, 3400))
+    assert g["gate"] == "finding" and g["candidate_finding"]["severity"] == "medium"
+    assert g["candidate_finding"]["confidence"] == "medium", \
+        "a single-egress timing observation must never claim high confidence"
+
+    g = mod.check_fetch_latency(pages(6000, 6200, 6400))
+    assert g["candidate_finding"]["severity"] == "high"
+
+    g = mod.check_fetch_latency(pages(9000, 9000))
+    assert g["gate"] == "not_evaluated", "fewer than 3 timed pages is too small a sample"
+
+    errored = [{"requested_url": "https://x.com/e", "status": 503, "timing_ms": 20000}]
+    g = mod.check_fetch_latency(pages(300, 320, 340) + errored)
+    assert g["gate"] == "pass" and g["observations"]["timed_pages"] == 3, \
+        "failed responses must be excluded from the timing sample: %s" % g["observations"]
+    print("fetch latency: median-not-max, sample floor, error exclusion: OK")
+
+
+def check_redirect_relay():
+    """REF-PATH-DROP-REDIRECT must fire on a dropped path and ONLY on that.
+
+    Regression: path_preserved used to be `path_matches and status < 400`, so a
+    variant that answered 403 to the audit UA while preserving its path was
+    reported as the site dropping the deep path - a false high-severity finding
+    observed live against bbc.com, where both variants in fact resolve 200 with
+    the path intact.
+    """
+    relay = load_collector().redirect_relay
+
+    ok = {"variant": "www", "requested": "https://www.x.com/a", "status": 200,
+          "final_path": "/a", "path_preserved": True, "variant_ok": True}
+    challenged = {"variant": "http", "requested": "http://x.com/a", "status": 403,
+                  "final_path": "/a", "path_preserved": True, "variant_ok": False}
+    unreachable = {"variant": "http", "requested": "http://x.com/a", "status": None,
+                   "final_path": None, "path_preserved": None}
+    truly_dropped = {"variant": "http", "requested": "http://x.com/a", "status": 200,
+                     "final_path": "/", "path_preserved": False, "variant_ok": True}
+
+    g = relay([ok, challenged])
+    assert g["candidate_gate"] == "pass", \
+        "a 403 variant that preserved its path must not be a path-drop finding: %s" % g
+    assert "403" in g["evidence"], "the excluding status must be named in evidence: %s" % g
+
+    g = relay([ok, truly_dropped])
+    assert g["candidate_gate"] == "finding", "a genuine path drop must still fire: %s" % g
+
+    g = relay([challenged, unreachable])
+    assert g["candidate_gate"] == "not_evaluated", \
+        "with nothing readable, path handling is unobserved, not a drop: %s" % g
+
+    assert relay([])["candidate_gate"] == "not_evaluated"
+    assert relay([ok])["candidate_gate"] == "pass"
+    print("redirect relay: path drop vs unreadable variant kept distinct: OK")
+
+
 def check_build_passages(exc_schema):
     """Regressions in the anchor->passage builder, all four found in live runs."""
     tmp = tempfile.mkdtemp()
@@ -237,6 +323,8 @@ def main():
 
     check_build_passages(exc_schema)
     check_verdicts_mode(frag_schema)
+    check_redirect_relay()
+    check_fetch_latency_gate()
     print("G1: PASS")
 
 

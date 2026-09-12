@@ -594,7 +594,8 @@ def capture_page(res, url, extractor, sitemap_lastmod):
             "images_without_dimensions": sum(
                 1 for i in extractor.images if not (i.get("width") and i.get("height"))),
             "images_total": len(extractor.images),
-            "render_blocking_head_scripts": extractor.render_blocking_head_scripts},
+            "render_blocking_head_scripts": extractor.render_blocking_head_scripts,
+            "has_viewport_meta": bool(extractor.metas.get("viewport"))},
         "non_text": {"canvas": extractor.canvas,
                      "svg_without_text": max(0, extractor.svg_open - (1 if extractor.svg_text else 0)),
                      "video_without_transcript": max(0, extractor.video - extractor.video_transcript)},
@@ -815,14 +816,61 @@ def probe_redirects(fetcher, deep_path):
     for variant, url in variants:
         res = fetcher.fetch(url, max_bytes=TINY_BYTES)
         if res.get("error") or res.get("status") is None:
-            out.append({"variant": variant, "requested": url,
-                        "final_path": None, "path_preserved": None})
+            out.append({"variant": variant, "requested": url, "status": None,
+                        "final_path": None, "path_preserved": None,
+                        "note": "variant unreachable: %s" % (res.get("error") or "no status")})
             continue
+        # path_preserved answers ONE question: did the path survive the redirect.
+        # Whether the variant also served a usable response is `variant_ok`, kept
+        # separate because a WAF 403 on the bot UA is not the site dropping a path,
+        # and reporting it as one produced false high-severity findings.
+        status = res["status"]
         final_path = urlparse(res["final_url"]).path
-        out.append({"variant": variant, "requested": url, "final_path": final_path,
-                    "path_preserved": final_path == parts.path
-                    and (res["status"] or 500) < 400})
+        out.append({"variant": variant, "requested": url, "status": status,
+                    "final_path": final_path,
+                    "path_preserved": final_path == parts.path,
+                    "variant_ok": status < 400})
     return out
+
+
+def redirect_relay(redirects):
+    """Gate REF-PATH-DROP-REDIRECT from the probed variants.
+
+    Only a variant we could actually read says anything about path handling. A
+    variant that answered 4xx/5xx (a WAF challenge on the audit UA is the common
+    case) is excluded and named rather than counted as a dropped path - counting
+    it produced false high-severity findings against sites whose redirects work.
+    """
+    dropped = [r for r in redirects if r.get("path_preserved") is False]
+    unread = [r for r in redirects if r.get("path_preserved") is None
+              or r.get("variant_ok") is False]
+    readable = [r for r in redirects if r.get("path_preserved") is not None
+                and r.get("variant_ok") is not False]
+
+    def _v(rows):
+        return "; ".join("%s (http %s)" % (r.get("variant", "?"), r.get("status"))
+                         for r in rows[:3])
+
+    if not redirects:
+        return {"candidate_gate": "not_evaluated",
+                "evidence": "no redirect variants were probed"}
+    if dropped:
+        return {"candidate_gate": "finding",
+                "evidence": "%d of %d probed redirect variant(s) dropped the deep path: %s"
+                            % (len(dropped), len(redirects), _v(dropped))}
+    if not readable:
+        return {"candidate_gate": "not_evaluated",
+                "evidence": "no redirect variant returned a readable response (%s) - "
+                            "path handling unobserved, which is not a path drop"
+                            % _v(unread)}
+    if unread:
+        return {"candidate_gate": "pass",
+                "evidence": "all %d readable redirect variant(s) preserve the deep path; "
+                            "%d variant(s) returned no readable response (%s) and were "
+                            "not judged" % (len(readable), len(unread), _v(unread))}
+    return {"candidate_gate": "pass",
+            "evidence": "all %d probed redirect variant(s) preserve the deep path"
+                        % len(redirects)}
 
 
 def probe_ua(fetcher, homepage_url, robots_groups, robots_status, browser_status):
@@ -1557,17 +1605,7 @@ def build_excerpts(pages, sitemap_summary, probes, catalog=None, corroboration=N
                 "evidence": "no genuine 404 body was captured to judge (probe returned %s)"
                             % soft.get("status")}
     redirects = probes.get("redirect_path_preservation", [])
-    dropped = [r for r in redirects if r.get("path_preserved") is False]
-    if not redirects:
-        relays["REF-PATH-DROP-REDIRECT"] = {"candidate_gate": "not_evaluated",
-            "evidence": "no redirect variants were probed"}
-    elif dropped:
-        relays["REF-PATH-DROP-REDIRECT"] = {"candidate_gate": "finding",
-            "evidence": "%d redirect variant(s) dropped the deep path: %s"
-                        % (len(dropped), "; ".join(r.get("variant", "?") for r in dropped[:3]))}
-    else:
-        relays["REF-PATH-DROP-REDIRECT"] = {"candidate_gate": "pass",
-            "evidence": "all %d probed redirect variant(s) preserve the deep path" % len(redirects)}
+    relays["REF-PATH-DROP-REDIRECT"] = redirect_relay(redirects)
     # measured[] is the raw material for write_fragment.py --verdicts: per check,
     # the numbers the collector already holds plus a gate hint and a written
     # evidence line. The model supplies a gate and, for findings, prose - it
@@ -1611,6 +1649,27 @@ def build_excerpts(pages, sitemap_summary, probes, catalog=None, corroboration=N
                          "pages_checked": len(pages),
                          "authority": "overlay_in_raw_html is the observation; "
                                       "screen_windows.overlay_present mirrors it"}}
+    # Deterministic: the tag is present in the served HTML or it is not. Pages
+    # that returned no body carry no perf_static and are excluded rather than
+    # counted as missing the tag.
+    vp_seen = [p for p in pages if "has_viewport_meta" in (p.get("perf_static") or {})]
+    vp_missing = [p for p in vp_seen
+                  if not (p.get("perf_static") or {}).get("has_viewport_meta")]
+    if not vp_seen:
+        ref_measured["REF-VIEWPORT-ABSENT"] = {
+            "candidate_gate": "not_evaluated",
+            "evidence": "no sampled page returned a body to inspect for a viewport meta"}
+    else:
+        ref_measured["REF-VIEWPORT-ABSENT"] = {
+            "candidate_gate": "finding" if vp_missing else "pass",
+            "evidence": ("%d/%d sampled pages serve no <meta name=viewport>"
+                         % (len(vp_missing), len(vp_seen))) if vp_missing else
+                        ("all %d sampled pages serve a viewport meta" % len(vp_seen)),
+            "observations": {"pages_without_viewport": len(vp_missing),
+                             "pages_checked": len(vp_seen),
+                             "sitewide": len(vp_missing) == len(vp_seen),
+                             "note": "tag absence is the observation; no rendering, "
+                                     "overflow or tap-target measurement was performed"}}
     ref = {"kind": "excerpt", "skill_id": "referral-experience-audit",
            "budget_chars": budgets["referral-experience-audit"],
            "generated_at": _now(), "pages": ref_pages,

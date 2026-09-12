@@ -87,6 +87,11 @@ all twelve checks deterministically:
 12. **ACC-LINK-ROT** — sampled unfetched same-origin links from `probes.internal_link_rot`:
     410s and timeouts never count; 3+ rotted, or any rotted decision-class path (pricing,
     product, docs, guide, support, checkout, contact, about), is medium, else low.
+13. **ACC-FETCH-LATENCY** — median `timing_ms` over pages that returned a successful body:
+    ≥5000 ms high, ≥2500 ms medium, else pass; fewer than 3 timed successes is
+    `not_evaluated`. The metric is end-to-end fetch (connect + redirect hops + body read)
+    from the auditor's egress — **not TTFB**, so sub-second bars do not apply, and never a
+    Core Web Vital. Capped at medium confidence: network distance inflates every number.
 
 ## Findings (authoring rules)
 
@@ -111,6 +116,9 @@ all twelve checks deterministically:
     `not_evaluated`.
   — ACC-LLMS-TXT-ABSENT: any non-docs site — and on no site is `llms.txt` a discoverability
     factor.
+  — ACC-FETCH-LATENCY: a single slow outlier in an otherwise fast sample — the median is the
+    number, never the max; a sample under 3 timed successes; and any temptation to restate
+    the figure as the visitor's page-load experience or as a Core Web Vital.
 - Severity and confidence are separate; follow
   `../audit-orchestrator/references/severity_model.md`. Spoofed-UA differentials cap at medium
   confidence. Semantic judgments are capped at medium confidence unless a deterministic

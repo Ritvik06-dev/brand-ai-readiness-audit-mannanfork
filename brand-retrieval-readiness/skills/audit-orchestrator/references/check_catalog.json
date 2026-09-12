@@ -133,6 +133,23 @@
       "affected_surfaces_default": []
     },
     {
+      "check_id": "ACC-FETCH-LATENCY",
+      "skill_id": "access-discovery-audit",
+      "category": "access-discovery",
+      "stage": "reach",
+      "pattern_template": "Sampled pages are slow enough to risk retrieval-fetcher timeouts",
+      "mechanism": "Live retrieval runs on a short per-fetch budget and abandons slow responses, so a page reachable in principle is never read in practice. Measured end to end (connect, redirect hops and body read) from the auditor's egress - this is NOT time-to-first-byte, and never a Core Web Vital.",
+      "evidence_required": "direct-measurement",
+      "evidence_template": "Median end-to-end fetch {median_ms} ms across {n} sampled pages (slowest {max_ms} ms); one observation from the auditor's egress at audit time.",
+      "severity_band": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "negative_control": "Report the median, never the max - a single slow outlier is normal and is not a finding. Fewer than 3 timed pages is too small a sample: not_evaluated. Pages that returned no body (errors, blanks, timing 0) are excluded. Distance from the auditor's egress inflates every number, so this is capped at medium confidence and never presented as the visitor's experience or as a synthesized CWV.",
+      "affected_surfaces_default": []
+    },
+    {
       "check_id": "ACC-LINK-ROT",
       "skill_id": "access-discovery-audit",
       "category": "access-discovery",
@@ -598,6 +615,22 @@
       "evidence_template": "{overlay_type} present in raw HTML on {k}/{n} sampled pages ({examples}).",
       "severity_band": ["medium", "high"],
       "negative_control": "A dismissible banner that does not obstruct main content, or overlays required by law on the specific content class.",
+      "affected_surfaces_default": []
+    },
+    {
+      "check_id": "REF-VIEWPORT-ABSENT",
+      "skill_id": "referral-experience-audit",
+      "category": "referral-experience",
+      "stage": "land",
+      "pattern_template": "Sampled pages serve no viewport meta, so mobile arrivals render at desktop width",
+      "mechanism": "Most assistant-referred traffic arrives on a phone. Without <meta name=viewport>, a mobile browser lays the page out at desktop width and scales it down, so the answer the visitor was sent for arrives unreadable and they leave before finding it.",
+      "evidence_required": "direct-measurement",
+      "evidence_template": "{k}/{n} sampled pages serve no <meta name=viewport>.",
+      "severity_band": [
+        "medium",
+        "high"
+      ],
+      "negative_control": "Tag absence is the whole observation - no rendering, overflow or tap-target measurement was performed, so never describe an observed mobile layout. Pages that returned no body are excluded rather than counted as missing the tag. A site whose audience is genuinely desktop-only (an internal console, a print-oriented archive) is a scoping judgment the model makes, not a defect the tag count proves.",
       "affected_surfaces_default": []
     },
     {

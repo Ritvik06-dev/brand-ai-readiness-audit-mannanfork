@@ -32,7 +32,13 @@ CHECK_IDS = [
     "ACC-NOARCHIVE-COPILOT", "ACC-CANONICAL-CONFLICT", "ACC-REDIRECT-LOOP",
     "ACC-BOT-CHALLENGE", "ACC-SITEMAP-ORPHAN", "ACC-SITEMAP-INVALID",
     "ACC-HREFLANG-INCONSISTENT", "ACC-LLMS-TXT-ABSENT", "ACC-LINK-ROT",
+    "ACC-FETCH-LATENCY",
 ]
+# End-to-end fetch, not TTFB (see ACC-FETCH-LATENCY mechanism), so these sit well
+# above the sub-second bars a TTFB check would use.
+LATENCY_HIGH_MS = 5000
+LATENCY_MEDIUM_MS = 2500
+LATENCY_MIN_SAMPLE = 3
 IMPORTANT_CLASSES = {"homepage", "decision", "product", "docs", "about", "trust"}
 HREFLANG_RE = re.compile(r"^[a-z]{2,3}(-[A-Za-z]{2})?(-[a-z]{2})?$")
 MAX_QUOTE = 200
@@ -699,6 +705,61 @@ def check_sitemap_orphan(snap, pages):
                        "one sampled page."))
 
 
+def check_fetch_latency(pages):
+    """Median end-to-end fetch time across sampled pages.
+
+    Median, never max: one slow outlier is normal on any site. Pages that
+    returned no body carry timing_ms 0 and are excluded rather than counted as
+    instant. Capped at medium confidence because the number includes the
+    auditor's own network distance and is one observation at one time.
+    """
+    timings = sorted(p["timing_ms"] for p in pages
+                     if isinstance(p.get("timing_ms"), int) and p["timing_ms"] > 0
+                     and isinstance(p.get("status"), int) and p["status"] < 400)
+    n = len(timings)
+    if n < LATENCY_MIN_SAMPLE:
+        return result("ACC-FETCH-LATENCY", "not_evaluated", observations={
+            "timed_pages": n, "minimum_sample": LATENCY_MIN_SAMPLE,
+            "reason": "fewer than %d pages returned a timed successful fetch; "
+                      "too small a sample to take a median" % LATENCY_MIN_SAMPLE})
+    median_ms = (timings[n // 2] if n % 2
+                 else (timings[n // 2 - 1] + timings[n // 2]) // 2)
+    observations = {
+        "median_ms": median_ms, "max_ms": timings[-1], "min_ms": timings[0],
+        "timed_pages": n,
+        "metric": "end-to-end fetch: connect + redirect hops + body read, from the "
+                  "auditor's egress - not TTFB, and not a Core Web Vital",
+        "thresholds_ms": {"medium": LATENCY_MEDIUM_MS, "high": LATENCY_HIGH_MS}}
+    if median_ms < LATENCY_MEDIUM_MS:
+        observations["outcome"] = "median under the %d ms bar" % LATENCY_MEDIUM_MS
+        return result("ACC-FETCH-LATENCY", "pass", observations=observations)
+    severity = "high" if median_ms >= LATENCY_HIGH_MS else "medium"
+    slowest = max((p for p in pages
+                   if isinstance(p.get("timing_ms"), int) and p["timing_ms"] == timings[-1]),
+                  key=lambda p: p["timing_ms"], default=None)
+    return result(
+        "ACC-FETCH-LATENCY", "finding",
+        urls=[slowest["requested_url"]] if slowest and slowest.get("requested_url") else None,
+        observations=observations,
+        evidence_quality="direct-measurement",
+        candidate=candidate(
+            "Sampled pages are slow enough to risk retrieval-fetcher timeouts",
+            severity, "medium",
+            "Median end-to-end fetch %d ms across %d sampled pages (slowest %d ms); "
+            "one observation from the auditor's egress at audit time, measured over "
+            "connect, redirect hops and body read - not TTFB."
+            % (median_ms, n, timings[-1]),
+            "Live retrieval abandons slow responses on a short per-fetch budget, so a "
+            "page that is reachable in principle may never be read in practice.",
+            "Serve anonymous HTML from cache/CDN and cut redirect hops on the sampled "
+            "paths; confirm against real field data before treating this as a "
+            "user-experience number.",
+            severity, effort="medium", owner="web-platform",
+            acceptance="Re-fetch the same sampled paths from a comparable network "
+                       "position and confirm the median end-to-end fetch is below "
+                       "%d ms." % LATENCY_MEDIUM_MS))
+
+
 def check_link_rot(snap):
     rows = (snap.get("probes") or {}).get("internal_link_rot")
     if rows is None:
@@ -926,6 +987,7 @@ def analyze(snap, notes):
     results.append(check_hreflang(snap, pages))
     results.append(check_llms_txt(snap))
     results.append(check_link_rot(snap))
+    results.append(check_fetch_latency(pages))
     return results
 
 

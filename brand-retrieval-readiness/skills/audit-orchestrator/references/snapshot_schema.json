@@ -750,6 +750,10 @@
               "render_blocking_head_scripts": {
                 "type": "integer",
                 "description": "<script src> in <head> without async/defer"
+              },
+              "has_viewport_meta": {
+                "type": "boolean",
+                "description": "a <meta name=viewport> with content is present; absence is the observation, never an observed overflow measurement"
               }
             }
           }
@@ -830,7 +834,22 @@
                 "type": [
                   "boolean",
                   "null"
-                ]
+                ],
+                "description": "did the path survive the redirect - this and nothing else; null when the variant returned no status at all"
+              },
+              "status": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "description": "final HTTP status of the variant, recorded so the path verdict is auditable"
+              },
+              "variant_ok": {
+                "type": "boolean",
+                "description": "final status < 400; kept separate from path_preserved because a WAF challenge on the audit UA is not a dropped path"
+              },
+              "note": {
+                "type": "string"
               }
             }
           }

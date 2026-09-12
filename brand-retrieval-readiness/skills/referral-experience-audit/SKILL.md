@@ -97,6 +97,10 @@ visitor, judged here because they land on the citation).
    observation or `needs_verification` hypothesis only; NEVER a measured Core Web Vital —
    say that real measurement requires CrUX field data or a lab run, which this audit does
    not perform.
+   **REF-VIEWPORT-ABSENT** rides the same relay: `pages_without_viewport` of
+   `pages_checked`, plus `sitewide`. Absence of `<meta name=viewport>` is the whole
+   observation — high when every sampled page lacks it, medium when only some do, and
+   never a description of an observed mobile layout, because none was rendered.
 5. **Write** the fragment to the orchestrator's `audit/findings/` path.
 
 ## Findings (authoring rules)
@@ -118,6 +122,9 @@ visitor, judged here because they land on the citation).
   - REF-OVERLAY-BLOCK: a dismissible banner that does not obstruct main content; legally
     required overlays on their specific content class.
   - REF-PERF-RISK: no fabricated CLS/LCP/INP numbers, ever.
+  - REF-VIEWPORT-ABSENT: every sampled page serves the tag; a page that returned no body
+    (excluded, not counted as missing); and a site whose audience is genuinely desktop-only
+    — say so and scope it rather than treating the tag count as proof of a defect.
 - Severity and confidence are separate; follow
   `../audit-orchestrator/references/severity_model.md`. Deterministic relays carry
   `direct-measurement`; the continuation judgments carry `semantic-judgment`, capped at medium

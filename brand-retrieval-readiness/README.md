@@ -11,6 +11,29 @@ This complements instrumented enterprise monitoring rather than cloning it: thos
 tools watch known topics on configured infrastructure over time; this diagnoses an
 unknown site from the outside in one pass and hands over an acceptance test per fix.
 
+## Credits and provenance
+
+This marketplace is a merge of two independently built audit marketplaces.
+
+- **[404Mayank/brand-retrieval-readiness](https://github.com/404Mayank/brand-retrieval-readiness)**
+  — the base. Architecture, all seven specialists, the script/model division of
+  labour, the excerpt-as-contract and verdicts-file pattern, the four JSON
+  schemas, the severity model, and the contract + 27-scenario fixture suites.
+- **[mannangrover/brand-ai-readiness-audit](https://github.com/mannangrover/brand-ai-readiness-audit)**
+  — a deterministic, single-command auditor built around a layered model
+  (reach → read → extract → corroborate → cover, plus engagement) with a computed
+  severity function and a guard clause on every check. Merged in from it:
+  `ACC-FETCH-LATENCY` (its L1-08, with the median-not-max guard kept and the
+  metric relabelled — the underlying measurement is a full response cycle, not
+  TTFB), `REF-VIEWPORT-ABSENT` (its E-07), and
+  `references/false_positive_register.md` (its 10-trap register, remapped to this
+  repo's check ids).
+
+Both projects reached the same two findings about the same site by completely
+different routes — one by regex over a shared fetch bundle, one by model judgment
+over prepared excerpts — which is the main reason the merge kept both halves
+rather than picking a winner.
+
 ## Division of labor
 
 Scripts own what must be exact — status codes, parses, counts, timeouts, schema
@@ -24,7 +47,7 @@ page URL). No record means `not_evaluated`, never a finding, never a pass.
 | Skill | Stage | Role | Driven by |
 |---|---|---|---|
 | `audit-orchestrator` | — | **entrypoint** — snapshot, composition, merge, report | `collect_snapshot.py`, `build_report.py` |
-| `access-discovery-audit` | reach | robots roles, index controls, canonicals, challenges, sitemaps, link rot | `probe_access.py` |
+| `access-discovery-audit` | reach | robots roles, index controls, canonicals, challenges, sitemaps, link rot, fetch latency | `probe_access.py` |
 | `representation-parity-audit` | read | raw/response/state/metadata fact parity | `analyze_representation.py` |
 | `answer-coverage-audit` | extract | two-source question set → passage completeness | judgment over bounded excerpts |
 | `entity-consistency-audit` | identify | JSON-LD validity, identity matrix, ambiguity gate | `check_entities.py` + judgment |
@@ -92,6 +115,11 @@ uvx --from skills-ref agentskills validate skills/<skill-name>
 findings *and* non-findings, and a smoke runner. The false-positive corpus
 (nextjs.org, gov.uk, wikipedia.org, linear.app, allbirds.com) re-runs green on
 severity (zero critical; highs hand-verified true positives with egress notes).
+
+`references/false_positive_register.md` lists the traps an unguarded audit fires
+on and names the guard that stops each one. Adding a check means adding its row
+there, its `negative_control` to `check_catalog.json`, and its "when NOT to flag"
+line to the owning SKILL.md — a check without a guard is not finished.
 
 ## Measured runtime
 
