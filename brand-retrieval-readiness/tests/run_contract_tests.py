@@ -205,6 +205,89 @@ def check_build_passages(exc_schema):
     print("build_passages: cross-page repeats, punctuation anchors, partial write: OK")
 
 
+def check_probe_recording(frag_schema):
+    """record_probes.py + observations_from: transcription without retyping.
+
+    The model supplies the judgment (which prompt, what outcome, what it noticed)
+    and the URLs it saw; the query text comes from the prompt set and the protocol
+    rules are enforced by the script rather than remembered.
+    """
+    tmp = tempfile.mkdtemp()
+    prompt_set = {
+        "kind": "excerpt", "skill_id": "offsite-visibility-audit", "pages": [],
+        "extras": {"prompt_set": [
+            {"question_id": "Q-001", "question": "What is Acme?", "source": "site-derived"},
+            {"question_id": "Q-002", "question": "Does Acme ship to Canada?",
+             "source": "market-derived"}]}}
+    ps_path = os.path.join(tmp, "offsite.json")
+    with open(ps_path, "w", encoding="utf-8") as fh:
+        json.dump(prompt_set, fh)
+
+    def run_rec(log, out_name="rows.json"):
+        log_path = os.path.join(tmp, "probes.txt")
+        with open(log_path, "w", encoding="utf-8") as fh:
+            fh.write(log)
+        out = os.path.join(tmp, out_name)
+        proc = subprocess.run(
+            [sys.executable, os.path.join(ORCH, "scripts", "record_probes.py"),
+             "--in", log_path, "--prompt-set", ps_path, "--out", out],
+            capture_output=True, text=True)
+        return proc, out
+
+    good = ("engine: web_search\ntimestamp: 2026-09-12T07:54:16Z\n\n"
+            "[Q-001] navigational third-party-cited\n"
+            "note: brand named, no acme.com cited\n"
+            "https://en.wikipedia.org/wiki/Acme\n"
+            "https://example.org/acme\n\n"
+            "[Q-002] - absent\n"
+            "https://competitor.example/shipping\n")
+    proc, rows_path = run_rec(good)
+    assert proc.returncode == 0, "valid log must record:\n" + proc.stderr
+    rows = load(rows_path)
+    assert rows["probes_run"] == 2
+    first = rows["rows"][0]
+    assert first["query"] == "What is Acme?", \
+        "query text must be joined from the prompt set, not retyped"
+    assert first["source"] == "site-derived" and first["label"] == "navigational"
+    assert first["timestamp"] == "2026-09-12T07:54:16Z", "one batch clock on every row"
+    assert len(first["cited_urls"]) == 2
+
+    # Protocol rules are enforced, not trusted.
+    bad_outcome = good.replace("absent", "sort-of-absent")
+    assert run_rec(bad_outcome, "a.json")[0].returncode == 2, "outcome must be a protocol class"
+    no_ts = "engine: web_search\n\n[Q-001] - absent\n"
+    assert run_rec(no_ts, "b.json")[0].returncode == 2, "a row without a clock is not a record"
+    unknown_q = "engine: web_search\ntimestamp: 2026-09-12T07:54:16Z\n\n[Q-099] - absent\n"
+    assert run_rec(unknown_q, "c.json")[0].returncode == 2, "prompt must exist in the set"
+    two_nav = good.replace("[Q-002] - absent", "[Q-002] navigational absent")
+    assert run_rec(two_nav, "d.json")[0].returncode == 2, "at most one navigational probe"
+
+    # observations_from pulls the rows in without the model retyping them.
+    excerpt = {"kind": "excerpt", "skill_id": "offsite-visibility-audit", "pages": [],
+               "extras": {"measured": {}}}
+    exc_path = os.path.join(tmp, "exc.json")
+    verdicts = {"skill_id": "offsite-visibility-audit", "verdicts": [
+        {"check": "OFF-BRAND-ABSENT", "gate": "pass", "observations_from": rows_path}]}
+    v_path = os.path.join(tmp, "verdicts.json")
+    for path, obj in ((exc_path, excerpt), (v_path, verdicts)):
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(obj, fh)
+    out = os.path.join(tmp, "frag.json")
+    proc = subprocess.run(
+        [sys.executable, os.path.join(ORCH, "scripts", "write_fragment.py"),
+         "--verdicts", "--in", v_path, "--excerpt", exc_path, "--out", out],
+        capture_output=True, text=True)
+    assert proc.returncode == 0, "observations_from must assemble:\n" + proc.stderr
+    frag = load(out)
+    jsonschema.Draft7Validator(frag_schema).validate(frag)
+    obs = frag["results"][0]["observations"]
+    assert obs["probes_run"] == 2 and len(obs["rows"]) == 2, \
+        "recorded rows must land in the check's observations"
+    assert "observations_from" not in json.dumps(frag), \
+        "the loader key itself must not leak into the fragment"
+    print("probe recording: protocol enforced, rows joined without retyping: OK")
+
+
 def check_verdicts_mode(frag_schema):
     """write_fragment --verdicts: flat lines in, schema-shaped fragment out."""
     tmp = tempfile.mkdtemp()
@@ -323,6 +406,7 @@ def main():
 
     check_build_passages(exc_schema)
     check_verdicts_mode(frag_schema)
+    check_probe_recording(frag_schema)
     check_redirect_relay()
     check_fetch_latency_gate()
     print("G1: PASS")

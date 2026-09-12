@@ -73,6 +73,50 @@ def run(cmd, timeout):
         return 99, "", "runner: %s" % e
 
 
+def print_semantic_gates(frag_dir):
+    """Print every prepared_gate the scripted specialists left for the model.
+
+    The gate text carries everything needed to decide, so surfacing it here
+    saves opening the fragment just to read one string - the decision and the
+    write_fragment call that records it can happen in the same turn.
+    """
+    lines = []
+    for name in sorted(os.listdir(frag_dir)) if os.path.isdir(frag_dir) else []:
+        if not name.endswith(".json"):
+            continue
+        try:
+            frag = json.load(open(os.path.join(frag_dir, name)))
+        except (OSError, ValueError):
+            continue
+        for res in frag.get("results") or []:
+            gate = (res.get("observations") or {}).get("prepared_gate")
+            if not gate:
+                continue
+            obs = {k: v for k, v in (res.get("observations") or {}).items()
+                   if k not in ("prepared_gate", "requires_completion")
+                   and not isinstance(v, (dict, list))}
+            lines.append((frag.get("skill_id") or name, res.get("check_id"), gate, obs,
+                          bool((res.get("observations") or {}).get("requires_completion"))))
+    todo = [ln for ln in lines if ln[4]]
+    if not todo:
+        return
+    print("semantic gate(s) awaiting your decision - decide and record in ONE call, "
+          "do not open the fragment:")
+    for skill_id, check_id, gate, obs, _ in todo:
+        print("  %s / %s" % (skill_id, check_id))
+        for key, val in obs.items():
+            print("      %s: %s" % (key, str(val)[:160]))
+        print("      ASK: %s" % gate[:900])
+        print("      RECORD: python <orchestrator>/scripts/write_fragment.py "
+              "--in <out-dir>/findings/%s.json --complete-gate %s "
+              "--gate pass|not_evaluated --reason \"<1-3 sentences>\""
+              % (skill_id, check_id))
+    skipped = len(lines) - len(todo)
+    if skipped:
+        print("  (%d other prepared pass(es) need no action - leave them untouched)"
+              % skipped)
+
+
 def summarize_fragment(path):
     try:
         frag = json.load(open(path))
@@ -213,6 +257,7 @@ def main(argv=None):
     print("phase1 status:")
     for skill_id, status in rows:
         print("  %-28s %s" % (skill_id, status))
+    print_semantic_gates(frag_dir)
     # Elapsed since the AUDIT began, not since this process did: with
     # --reuse-snapshot a fresh t0 would reset the budget clock and under-report.
     elapsed = time.monotonic() - t0

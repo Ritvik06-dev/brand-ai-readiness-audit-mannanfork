@@ -182,6 +182,20 @@ def assemble_from_verdicts(verdicts_doc, excerpt, catalog, notes):
             continue
         meas = measured.get(cid) or {}
         obs = dict(meas.get("observations") or {})
+        # observations_from: load a script-built observation block (record_probes.py)
+        # instead of retyping it into the verdicts file. Transcription belongs to a
+        # script; the verdict stays the model's.
+        src = v.get("observations_from")
+        if src:
+            try:
+                with open(src, "r", encoding="utf-8") as fh:
+                    loaded = json.load(fh)
+                if not isinstance(loaded, dict):
+                    raise ValueError("must be a JSON object")
+                obs.update(loaded)
+            except (OSError, ValueError) as e:
+                notes.append("%s: observations_from %s unreadable (%s); "
+                             "check recorded without it" % (cid, src, e))
         obs.update(v.get("observations") or {})
         if meas.get("evidence") and "measured" not in obs:
             obs["measured"] = meas["evidence"]

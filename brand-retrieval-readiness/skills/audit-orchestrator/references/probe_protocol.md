@@ -9,7 +9,11 @@ engines. It does not go stale because it names no tool.
 
 1. **Evidence not assertion.** A probe counts as run only when its observation is recorded:
    engine, exact query string, timestamp (UTC), and result. No record → the check is
-   `not_evaluated`, whatever the intent was. The timestamp is a recorded clock, never an
+   `not_evaluated`, whatever the intent was. Recording is transcription, not judgment, so
+   it belongs to a script: write the short form and run
+   `<orchestrator>/scripts/record_probes.py`, which joins the query text from the prompt
+   set, stamps one batch clock on every row, and rejects a log that breaks rules 3, 4 or 5
+   rather than leaving them to memory. The timestamp is a recorded clock, never an
    estimate: run one `date -u` immediately before the first probe and stamp every row of
    that batch with that single batch time; if a written time is later found wrong, rewrite
    the rows before handoff — a predicted or evenly-spaced time in evidence is a defect.

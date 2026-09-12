@@ -58,6 +58,10 @@ from there with explicit paths.
   in one pass each. **That printed number is the gate, read once, and it does not get
   re-evaluated later** — if it said 178 s, off-site probes run even when more time has passed
   by the time you reach them. One clock, read once, no re-estimating.
+- **Round trips:** a shell call costs more than the command inside it. Chain any commands
+  that are sequential with no decision between them into one call — snapshot + phase 1, and
+  the final fragment write + cleanup + report build. Never chain across a decision you have
+  not made yet.
 - **Model turns:** judge each specialist from its excerpt in a single pass and write the
   fragment once; run the report build once. Emit partial findings with `not_evaluated`
   rather than overrun — a valid partial report always beats an overrun. Do not re-read
@@ -107,7 +111,11 @@ from there with explicit paths.
    It validates its own output, prints a small summary, and writes
    `audit/excerpts/<skill>.json` for each judgment specialist. Read only the printed summary.
    If it reports unreachable or deadline problems, continue with what was captured and record
-   it.
+   it. Pages are fetched on a small pool (`--concurrency`, default 4); only the waiting
+   overlaps, so the snapshot is identical to a serial run.
+   **Chain this with step 4 in a single shell call** (`… collect_snapshot.py … && …
+   run_phase1.py …`). Nothing is decided between them, and the round trip costs more than
+   the commands do.
 
 3. **Enumerate specialists.** Resolve `MARKETPLACE_ROOT` (Paths above; fallback chain below) and read
    `marketplace.json`. Specialists run in **manifest order** (skip this entrypoint).
@@ -124,9 +132,10 @@ from there with explicit paths.
    is absent, run the three scripts individually with
    `--snapshot ./audit/snapshot.json --out ./audit/findings/<skill-id>.json` (script named in
    each skill's SKILL.md).
-   Then **complete the one semantic gate**: `ENT-AMBIGUOUS-NAME`. Its result carries a
-   `prepared_gate` string stating exactly what to decide — read that, decide, and record it
-   with one command. Never hand-edit the fragment:
+   Then **complete the one semantic gate**: `ENT-AMBIGUOUS-NAME`. `run_phase1` already prints
+   it under "semantic gate(s) awaiting your decision", with the observations you need, the
+   question to answer, and the exact command. **Decide from that print — do not open the
+   fragment to read it again.** Record it with one command; never hand-edit the fragment:
    `python3 <orchestrator>/scripts/write_fragment.py --in ./audit/findings/entity-consistency-audit.json --complete-gate ENT-AMBIGUOUS-NAME --gate pass|not_evaluated --reason "<1-3 sentences>"`
    (To promote it to a finding instead, submit it through `--verdicts` with the finding
    prose.) Other `gate: "pass"` results carrying `evidence_quality: "semantic-judgment"` are
@@ -168,6 +177,9 @@ from there with explicit paths.
    `python3 <orchestrator>/scripts/build_report.py --site <host> --out ./audit/report.json --snapshot ./audit/snapshot.json --fragment ./audit/findings/<each>.json` (repeat `--fragment` once per fragment file; shell globs are not expanded).
    It assigns finding IDs, dedups root causes, backfills `not_evaluated`, lints forbidden
    claims, validates the report schema, and prints the human summary.
+   **Chain the last specialist's `write_fragment.py`, any scratch cleanup, and this
+   `build_report.py` into one shell call.** They are sequential with no decision between
+   them, so three round trips buy nothing.
 
 7. **Emit.** The build has already written the full document to `./audit/report.md` —
    findings with evidence, why-it-matters, fix, owner, verify line and affected URLs; what

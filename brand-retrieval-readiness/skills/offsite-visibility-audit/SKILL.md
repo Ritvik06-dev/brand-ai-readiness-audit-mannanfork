@@ -62,14 +62,35 @@ invention.
    shed: emit all four OFF checks as `not_evaluated` ("deadline shed") and finish. If the
    prompt set is empty or missing, stop here: emit all four OFF checks as `not_evaluated`
    and finish — never improvise probes to fill the silence.
-3. **Run and record** each probe per `<orchestrator>/references/probe_protocol.md`: engine, exact query,
-   UTC timestamp, cited URLs (first 10), outcome class. Timestamps are recorded clocks,
-   never estimates: run one `date -u` immediately before the first probe and stamp every
-   row of a batch with that single batch time. One run is one observation; never
-   reconcile repeats into a single answer. Record each row inside that check's `observations`
-   (engine, query, timestamp, cited URLs, outcome) — never as top-level fragment keys. A check
-   with zero recorded rows is `not_evaluated`, never a pass or finding: no rows means
-   no observation.
+3. **Run and record** each probe per `<orchestrator>/references/probe_protocol.md`.
+   Timestamps are recorded clocks, never estimates: run one `date -u` immediately before the
+   first probe and stamp every row of the batch with that single time.
+   **Do not hand-write the rows.** Write the short form to a scratch file — one header per
+   probe plus the URLs you saw — and let the recorder join the query text from the prompt
+   set, stamp the batch clock, and enforce the protocol's budget, outcome classes and
+   one-navigational rule:
+
+   ```
+   engine: web_search
+   timestamp: <the date -u you just ran>
+
+   [Q-003] - third-party-cited
+   note: brand named; the answer came from wikipedia.org, not the official page
+   https://en.wikipedia.org/wiki/Example
+   https://competitor.example/page
+
+   [Q-001] navigational absent
+   https://example.org/other
+   ```
+
+   `python3 <orchestrator>/scripts/record_probes.py --in ./audit/probes.txt --prompt-set audit/excerpts/offsite-visibility-audit.json --out ./audit/probe_rows.json`
+
+   Then reference that file from the verdict that owns the rows, instead of retyping them:
+   `{"check": "OFF-BRAND-ABSENT", "gate": "...", "observations_from": "./audit/probe_rows.json"}`.
+   The label slot is `navigational` or `-`; outcome is one of the protocol's seven classes.
+   One run is one observation; never reconcile repeats into a single answer. A check with
+   zero recorded rows is `not_evaluated`, never a pass or finding: no rows means no
+   observation.
 4. **Gate the checks** from the recorded rows:
    - **OFF-BRAND-ABSENT** — prompts where no answer mentions the brand.
    - **OFF-THIRD-PARTY-PREFERRED** — prompts where a third party is cited though an official

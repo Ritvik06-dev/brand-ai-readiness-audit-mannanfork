@@ -607,6 +607,11 @@ def check_ambiguous_name(pages, ne):
             "name_variants": [g["reps"][0][1] for g in ne["groups"].groups][:6],
             "qualifier_presence": qualifiers,
             "qualifier_words_checked": sorted(QUALIFIER_WORDS)[:15],
+            # The orchestrator procedure names this as the one gate the model must
+            # finish; every other semantic-judgment pass is a prepared pass to be
+            # left alone. Saying so in the data means the runner can label it
+            # instead of the reader inferring it from prose.
+            "requires_completion": True,
             "prepared_gate": (
                 "MODEL JUDGMENT - complete here, do not open a SKILL.md for it. "
                 "Ask: could a retrieval system confuse this brand with a different "
