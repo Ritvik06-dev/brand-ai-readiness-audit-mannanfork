@@ -8,6 +8,7 @@ stdlib-only (vendored draft-07 subset validator) and runs as a subprocess.
 Run:  uv run --python 3.9 --with jsonschema tests/run_contract_tests.py
 """
 
+import datetime
 import json
 import os
 import subprocess
@@ -360,6 +361,79 @@ def check_verdicts_mode(frag_schema):
     print("write_fragment --verdicts: assembly, catalog defaults, silence-is-not-a-pass: OK")
 
 
+def check_budget_record(out_schema):
+    """coverage.time_seconds is measured, shed is recorded, and shedding is partial.
+
+    The schema has declared time_seconds since v1.0; until the budget thread
+    landed nothing wrote it, so this asserts the field is populated from a real
+    clock and that a shed run cannot call itself complete.
+    """
+    tmp = tempfile.mkdtemp()
+    # 1. No clock available anywhere -> null, never a guess, and still valid.
+    plain = os.path.join(tmp, "plain.json")
+    proc = subprocess.run(
+        [sys.executable, os.path.join(ORCH, "scripts", "build_report.py"),
+         "--fragment", SAMPLE, "--site", "example.com", "--out", plain],
+        capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stderr
+    rep = load(plain)
+    jsonschema.Draft7Validator(out_schema).validate(rep)
+    cov = rep["coverage"]
+    assert cov["time_seconds"] is None, "unmeasured runtime must be null, not 0"
+    assert cov["budget_exceeded"] is False and cov["shed"] == []
+    assert any("Runtime was not measured" in l for l in rep["limitations"]), \
+        "an unmeasured runtime must be declared in limitations"
+
+    # 2. A started_at 400s ago against a 300s budget -> measured and over budget.
+    started = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=400)
+    over = os.path.join(tmp, "over.json")
+    proc = subprocess.run(
+        [sys.executable, os.path.join(ORCH, "scripts", "build_report.py"),
+         "--fragment", SAMPLE, "--site", "example.com", "--out", over,
+         "--started-at", started.strftime("%Y-%m-%dT%H:%M:%SZ"),
+         "--shed", "off-site visibility probes@240:past the 210s gate"],
+        capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stderr
+    rep = load(over)
+    jsonschema.Draft7Validator(out_schema).validate(rep)
+    cov = rep["coverage"]
+    assert 395 <= cov["time_seconds"] <= 420, "time_seconds not measured: %s" % cov["time_seconds"]
+    assert cov["budget_seconds"] == 300 and cov["budget_exceeded"] is True
+    assert cov["shed"] == [{"what": "off-site visibility probes", "at_seconds": 240,
+                            "reason": "past the 210s gate"}], cov["shed"]
+    assert rep["audit_status"] == "partial", \
+        "a run that shed work is a deadline hit and must not report complete"
+    assert any("Shed at 240s" in l for l in rep["limitations"])
+    assert any("against a 300s budget" in l for l in rep["limitations"])
+    assert "RUNTIME" in proc.stdout and "OVER BUDGET" in proc.stdout, \
+        "the emit step reads runtime off stdout; it must be printed"
+
+    # 3. The sidecar supplies the clock with no CLI flags at all.
+    side = os.path.join(tmp, "budget.json")
+    snap_dir_report = os.path.join(tmp, "sidecar.json")
+    with open(side, "w", encoding="utf-8") as fh:
+        json.dump({"started_at": started.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                   "budget_seconds": 300,
+                   "shed": [{"what": "answer-coverage non-core archetypes",
+                             "at_seconds": 160}]}, fh)
+    proc = subprocess.run(
+        [sys.executable, os.path.join(ORCH, "scripts", "build_report.py"),
+         "--fragment", SAMPLE, "--site", "example.com", "--out", snap_dir_report,
+         "--budget-file", side],
+        capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stderr
+    rep = load(snap_dir_report)
+    jsonschema.Draft7Validator(out_schema).validate(rep)
+    assert rep["coverage"]["time_seconds"] is not None, "sidecar clock was ignored"
+    assert rep["coverage"]["shed"][0]["what"] == "answer-coverage non-core archetypes"
+    assert rep["audit_status"] == "partial"
+    md = os.path.splitext(snap_dir_report)[0] + ".md"
+    body = open(md, encoding="utf-8").read()
+    assert "against a 300s budget" in body and "Shed to stay inside the budget" in body, \
+        "report.md must show runtime and what was shed"
+    print("budget record: measured runtime, shed ledger, partial-on-shed, md render: OK")
+
+
 def main():
     frag_schema = load(os.path.join(REFS, "finding_fragment.json"))
     out_schema = load(os.path.join(REFS, "output_schema.json"))
@@ -409,6 +483,7 @@ def main():
     check_probe_recording(frag_schema)
     check_redirect_relay()
     check_fetch_latency_gate()
+    check_budget_record(out_schema)
     print("G1: PASS")
 
 

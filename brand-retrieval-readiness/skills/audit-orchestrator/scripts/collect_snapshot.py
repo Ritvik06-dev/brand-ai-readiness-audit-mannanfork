@@ -2226,6 +2226,33 @@ def first_window_verdict(page, candidate):
         return None
 
 
+def record_shed(snapshot_path, rows):
+    """Append shed decisions to the budget sidecar beside snapshot.json.
+
+    The gate that decides to shed is the only place that knows what was dropped
+    and at what clock reading. Recording it here means build_report publishes a
+    measured fact rather than the model remembering to pass a flag.
+    """
+    if not rows:
+        return
+    path = os.path.join(os.path.dirname(os.path.abspath(snapshot_path)), "budget.json")
+    record = {"started_at": None, "budget_seconds": 300, "shed": []}
+    if os.path.exists(path):
+        try:
+            record.update(json.load(open(path)) or {})
+        except (OSError, ValueError):
+            pass
+    existing = {str(r.get("what", "")).lower() for r in record.get("shed") or []}
+    record["shed"] = (record.get("shed") or []) + [
+        r for r in rows if r["what"].lower() not in existing]
+    try:
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(record, fh, indent=2)
+            fh.write("\n")
+    except OSError:
+        pass  # additive; never fail the post-step over the sidecar
+
+
 def run_passages(args):
     snapshot = load_json(args.snapshot)
     passages = load_json(args.passages)
@@ -2239,6 +2266,17 @@ def run_passages(args):
               "do not estimate your own) | SHED: %s | TIMEBOX: %s"
               % (int(elapsed), "offsite (+referral 3q)" if shed else "none",
                  "answer-coverage=core-only" if elapsed > 150 else "full"))
+        rows = []
+        if shed:
+            rows.append({"what": "off-site visibility probes", "at_seconds": int(elapsed),
+                         "reason": "past the 210s gate; all OFF-* checks are not_evaluated"})
+            rows.append({"what": "referral continuation judgment beyond 3 questions",
+                         "at_seconds": int(elapsed), "reason": "past the 210s gate"})
+        if elapsed > 150:
+            rows.append({"what": "answer-coverage non-core archetypes",
+                         "at_seconds": int(elapsed),
+                         "reason": "past the 150s timebox; core archetypes only"})
+        record_shed(args.snapshot, rows)
     except (KeyError, ValueError, AttributeError):
         pass
     if passages.get("kind") != "passages":
