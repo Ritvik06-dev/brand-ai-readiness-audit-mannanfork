@@ -542,7 +542,10 @@ def main():
         coverage["browser_available"] = browser_ok
         if not browser_ok:
             coverage["capabilities_unavailable"].append("browser")
-        snapshot_started = _parse_started_at(snap.get("audited_at"))
+        # collection_started_at is when fetching began; audited_at is when it
+        # ended. Anchoring on audited_at reports ~0s for any scripted run.
+        snapshot_started = _parse_started_at(
+            snap.get("collection_started_at") or snap.get("audited_at"))
 
     # Runtime is a reported property of the audit, not a claim in the README.
     # The schema has carried coverage.time_seconds since v1.0 and nothing wrote

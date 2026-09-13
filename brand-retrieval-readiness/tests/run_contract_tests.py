@@ -431,7 +431,34 @@ def check_budget_record(out_schema):
     body = open(md, encoding="utf-8").read()
     assert "against a 300s budget" in body and "Shed to stay inside the budget" in body, \
         "report.md must show runtime and what was shed"
+    # 4. The clock anchors on when collection BEGAN, not when it ended.
+    #    audited_at is stamped after the last fetch, so anchoring there reported
+    #    time_seconds: 0 for a run that really took 103s. Regression guard.
+    snapdir = os.path.join(tmp, "snap")
+    os.makedirs(snapdir, exist_ok=True)
+    began = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=95)
+    ended = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=2)
+    snap_path = os.path.join(snapdir, "snapshot.json")
+    with open(snap_path, "w", encoding="utf-8") as fh:
+        json.dump({"snapshot_version": 1, "requested_url": "https://ex.test",
+                   "collection_started_at": began.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                   "audited_at": ended.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                   "capabilities": {"browser": False},
+                   "discovery": {"candidates_count": 5, "selected": ["a"]},
+                   "pages": [], "probes": {}}, fh)
+    anchored = os.path.join(tmp, "anchored.json")
+    proc = subprocess.run(
+        [sys.executable, os.path.join(ORCH, "scripts", "build_report.py"),
+         "--fragment", SAMPLE, "--site", "ex.test", "--out", anchored,
+         "--snapshot", snap_path],
+        capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stderr
+    ts = load(anchored)["coverage"]["time_seconds"]
+    assert ts is not None and ts >= 90, \
+        ("runtime must be measured from collection start (~95s), not from "
+         "audited_at (~2s); got %s" % ts)
     print("budget record: measured runtime, shed ledger, partial-on-shed, md render: OK")
+    print("budget clock: anchored on collection start, not collection end: OK")
 
 
 def main():

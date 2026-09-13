@@ -198,11 +198,15 @@ def write_budget(out_dir, snap_started_iso, elapsed_now, budget_seconds=300):
         except (OSError, ValueError):
             pass
     if not record["started_at"]:
+        # collection_started_at is when fetching BEGAN. audited_at is when it
+        # ended, so it is only the last resort - anchoring the budget there
+        # silently discards the collection phase and reports a near-zero runtime.
         snap = os.path.join(out_dir, "snapshot.json")
         try:
-            record["started_at"] = json.load(open(snap))["audited_at"]
+            sn = json.load(open(snap))
+            record["started_at"] = sn.get("collection_started_at") or snap_started_iso                 or sn["audited_at"]
         except (OSError, ValueError, KeyError):
-            record["started_at"] = datetime.fromtimestamp(
+            record["started_at"] = snap_started_iso or datetime.fromtimestamp(
                 time.time() - max(0, elapsed_now), timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     try:
         with open(path, "w", encoding="utf-8") as fh:
